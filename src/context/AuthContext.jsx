@@ -1,17 +1,15 @@
-import { createContext, useState, useContext, useEffect } from 'react';
+import { createContext, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  // Inicializamos buscando en localStorage
   const [token, setToken] = useState(localStorage.getItem('token'));
   const navigate = useNavigate();
 
   const login = (newToken) => {
     localStorage.setItem('token', newToken);
     setToken(newToken);
-    // Usamos replace: true para que el usuario no pueda volver atrás al login con el botón del navegador
     navigate('/dashboard', { replace: true });
   };
 
@@ -21,11 +19,25 @@ export const AuthProvider = ({ children }) => {
     navigate('/login', { replace: true });
   };
 
+  // Valor que compartimos en toda la app
+  const value = {
+    token,
+    isAuthenticated: !!token, // Útil para proteger rutas
+    login,
+    logout
+  };
+
   return (
-    <AuthContext.Provider value={{ token, login, logout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth debe us-arse dentro de un AuthProvider");
+  }
+  return context;
+};
