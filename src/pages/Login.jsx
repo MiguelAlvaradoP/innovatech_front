@@ -2,13 +2,14 @@ import { useState } from 'react';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import { LogIn, Lock, User } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const Login = () => {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
-
+const navigate = useNavigate();
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -17,7 +18,17 @@ const Login = () => {
     try {
       const response = await api.post('/usuarios/login', credentials);
       const token = response.data.token; 
+      
+      // 1. Guardamos en el almacenamiento físico (Ya lo tenías)
       localStorage.setItem('token', token);
+
+      // 2. ¡ESTA ES LA QUE FALTA! 
+      // Notificamos al AuthContext para que App.jsx se actualice
+      login(token); 
+
+      // Nota: No necesitas navigate() aquí si ya lo tienes dentro de la función login 
+      // en tu AuthContext, pero no hace daño dejarlo si el contexto no lo hace.
+      
     } catch (err) {
       setError('Credenciales inválidas o servidor no disponible');
     } finally {
