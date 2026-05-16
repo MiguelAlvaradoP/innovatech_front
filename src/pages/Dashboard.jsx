@@ -1,262 +1,425 @@
 import React, { useState, useEffect } from 'react';
-import api from '../api/axios';
-import { useAuth } from '../context/AuthContext';
-import { LogOut, FolderKanban, Plus, X, Save, Info, Users, LayoutDashboard } from 'lucide-react';
+import ListaProyectos from '../components/ListaProyectos'; 
 
-// REORDENADO E IMPORTS LIMPIOS
-import ListaProyectos from '../components/ListaProyectos';
-import GestionUsuarios from './GestionUsuarios'; 
+export default function Dashboard() {
+  const [proyectos, setProyectos] = useState([]);
+  const [usuariosGlobales, setUsuariosGlobales] = useState([]); 
+  const [vistaActual, setVistaActual] = useState('proyectos'); 
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-const Dashboard = () => {
-  const { logout } = useAuth();
-  
-  // ESTADOS DE NAVEGACIÓN
-  const [vista, setVista] = useState('proyectos'); // 'proyectos' o 'usuarios'
-  
-  // ESTADOS DE MODAL Y FORMULARIO
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editId, setEditId] = useState(null);
-  
-  // ESTADO PARA ALMACENAR USUARIOS DESDE EL MICROSERVICIO
-  const [usuariosDisponibles, setUsuariosDisponibles] = useState([]);
+  // Estados para controlar la visibilidad de los Modales
+  const [isCrearModalOpen, setIsCrearModalOpen] = useState(false);
+  const [isEditarModalOpen, setIsEditarModalOpen] = useState(false);
 
-  const [nuevo, setNuevo] = useState({
+  // Estructura limpia alineada con tu JSON de Spring Boot
+  const estructuraProyectoBase = {
     nombre: '',
     descripcion: '',
-    fechaInicio: new Date().toISOString().split('T')[0],
+    fechaInicio: '',
     fechaEntrega: '',
     prioridad: 'MEDIA',
     progresoPorcentaje: 0,
-    usuarioId: '' // ID del usuario seleccionado
-  });
+    usuarioId: '', // Dueño o usuario principal asignado al proyecto
+    tasks: [],
+    asignaciones: [],
+    estadoCalculado: 'A TIEMPO'
+  };
 
-  // Efecto para obtener la lista de usuarios disponibles al montar el dashboard
-  useEffect(() => {
-    const obtenerUsuarios = async () => {
-      try {
-        const response = await api.get('/usuarios'); 
-        setUsuariosDisponibles(Array.isArray(response.data) ? response.data : []);
-      } catch (error) {
-        console.error("Error al cargar la lista de usuarios:", error);
-      }
+  const [nuevoProyecto, setNuevoProyecto] = useState({ ...estructuraProyectoBase });
+  const [proyectoAEditar, setProyectoAEditar] = useState(null);
+
+  const API_BASE_URL = 'http://localhost:8085/api/proyectos';
+  const API_USUARIOS_URL = 'http://localhost:8085/api/usuarios'; 
+
+  const obtenerHeadersAutenticadas = () => {
+    const token = localStorage.getItem('token'); 
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': token ? `Bearer ${token}` : '' 
     };
-    obtenerUsuarios();
+  };
+
+  const cargarDatosDashboard = async () => {
+    try {
+      setLoading(true);
+      const headers = obtenerHeadersAutenticadas();
+
+      // 1. Cargar proyectos
+      const resProyectos = await fetch(API_BASE_URL, { method: 'GET', headers });
+      if (resProyectos.status === 401 || resProyectos.status === 403) {
+        throw new Error('No autorizado. Tu sesión ha expirado.');
+      }
+      const dataProyectos = await resProyectos.json();
+
+      // 2. Cargar usuarios del ecosistema
+      try {
+        const resUsuarios = await fetch(API_USUARIOS_URL, { method: 'GET', headers });
+        if (resUsuarios.ok) {
+          const dataUsuarios = await resUsuarios.json();
+          setUsuariosGlobales(dataUsuarios);
+        }
+      } catch (uErr) {
+        console.warn("Usando usuarios de respaldo locales:", uErr);
+        setUsuariosGlobales([
+          { id: 14, username: 'sebastian_dev' },
+          { id: 15, username: 'granu_admin' },
+          { id: 1, username: 'coordinador_aws' }
+        ]);
+      }
+
+      setProyectos(dataProyectos || []);
+      setError(null);
+    } catch (err) {
+      console.error("❌ Error en la carga general:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    cargarDatosDashboard();
   }, []);
 
-  // --- Lógica de Cálculo Automático de Tiempo ---
-  const calcularProgresoDesdeFechas = (inicio, fin) => {
-    if (!inicio || !fin) return 0;
-    const fInicio = new Date(inicio);
-    const fFin = new Date(fin);
-    const hoy = new Date();
-    if (hoy < fInicio) return 0;
-    if (hoy > fFin) return 100;
-    const total = fFin - fInicio;
-    const transcurrido = hoy - fInicio;
-    return Math.min(100, Math.max(0, Math.round((transcurrido / total) * 100)));
-  };
+  // GUARDAR NUEVO PROYECTO
+const handleGuardarNuevoProyecto = async (e) => {
+  e.preventDefault();
+  try {
+    // Validamos estrictamente si el id es un número válido y no un string vacío o '0'
+    const idUsuarioLimpio = nuevoProyecto.usuarioId && Number(nuevoProyecto.usuarioId) !== 0 
+      ? Number(nuevoProyecto.usuarioId) 
+      : null;
 
-  const prepararEdicion = (proyecto) => {
-    // Buscamos si ya tiene un usuario asignado en su arreglo para preseleccionar en el menú
-    const primeraAsignacion = proyecto.asignaciones && proyecto.asignaciones.length > 0 
-      ? proyecto.asignaciones[0].usuarioId 
-      : '';
-
-    setNuevo({
-      nombre: proyecto.nombre || '',
-      descripcion: proyecto.descripcion || '',
-      fechaInicio: proyecto.fechaInicio || new Date().toISOString().split('T')[0],
-      fechaEntrega: proyecto.fechaEntrega || '',
-      prioridad: proyecto.prioridad || 'MEDIA',
-      progresoPorcentaje: proyecto.progresoPorcentaje || 0,
-      usuarioId: primeraAsignacion || proyecto.usuarioId || '' 
+    const response = await fetch(API_BASE_URL, {
+      method: 'POST',
+      headers: obtenerHeadersAutenticadas(),
+      body: JSON.stringify({
+        nombre: nuevoProyecto.nombre,
+        descripcion: nuevoProyecto.descripcion,
+        fechaInicio: nuevoProyecto.fechaInicio,
+        fechaEntrega: nuevoProyecto.fechaEntrega,
+        prioridad: nuevoProyecto.prioridad,
+        progresoPorcentaje: Number(nuevoProyecto.progresoPorcentaje),
+        usuarioId: idUsuarioLimpio, // Mandamos un entero o null real
+        tasks: [],
+        estadoCalculado: nuevoProyecto.estadoCalculado
+      })
     });
-    setEditId(proyecto.id);
-    setIsModalOpen(true);
-  };
 
-  const cerrarModal = () => {
-    setIsModalOpen(false);
-    setEditId(null);
-    setNuevo({
-      nombre: '', descripcion: '',
-      fechaInicio: new Date().toISOString().split('T')[0],
-      fechaEntrega: '', prioridad: 'MEDIA', progresoPorcentaje: 0,
-      usuarioId: ''
-    });
-  };
+    if (response.ok) {
+      setIsCrearModalOpen(false);
+      setNuevoProyecto({ ...estructuraProyectoBase });
+      cargarDatosDashboard();
+    } else {
+      alert('Error en el servidor al intentar crear el proyecto.');
+    }
+  } catch (err) {
+    console.error(err);
+  }
+};
+  // MODIFICAR PROYECTO
+  // MODIFICAR PROYECTO
+const handleGuardarEdicionProyecto = async (e) => {
+  e.preventDefault();
+  try {
+    // Saneamos el usuarioId para evitar que viaje un string vacío o un 0 que tire 500 en Spring
+    const idUsuarioLimpio = proyectoAEditar.usuarioId && Number(proyectoAEditar.usuarioId) !== 0 
+      ? Number(proyectoAEditar.usuarioId) 
+      : null;
 
-  const guardarProyecto = async (e) => {
-    e.preventDefault();
-    const progresoCalculado = calcularProgresoDesdeFechas(nuevo.fechaInicio, nuevo.fechaEntrega);
-    
-    const endpoint = editId ? `/proyectos/${editId}` : '/proyectos';
-    
-    const dataCuerpo = { 
-      nombre: nuevo.nombre,
-      descripcion: nuevo.descripcion,
-      fechaInicio: nuevo.fechaInicio,
-      fechaEntrega: nuevo.fechaEntrega,
-      prioridad: nuevo.prioridad,
-      progresoPorcentaje: progresoCalculado
+    const bodyPayload = {
+      id: proyectoAEditar.id,
+      nombre: proyectoAEditar.nombre,
+      descripcion: proyectoAEditar.descripcion,
+      fechaInicio: proyectoAEditar.fechaInicio,
+      fechaEntrega: proyectoAEditar.fechaEntrega,
+      prioridad: proyectoAEditar.prioridad || "MEDIA",
+      progresoPorcentaje: Number(proyectoAEditar.progresoPorcentaje),
+      usuarioId: idUsuarioLimpio, // Payload limpio para Hibernate
+      tasks: proyectoAEditar.tasks || [],
+      asignaciones: proyectoAEditar.asignaciones || [],
+      estadoCalculado: proyectoAEditar.estadoCalculado || "A TIEMPO"
     };
 
+    const response = await fetch(`${API_BASE_URL}/${proyectoAEditar.id}`, {
+      method: 'PUT',
+      headers: obtenerHeadersAutenticadas(),
+      body: JSON.stringify(bodyPayload)
+    });
+
+    if (response.ok) {
+      setIsEditarModalOpen(false);
+      setProyectoAEditar(null);
+      cargarDatosDashboard();
+    } else {
+      const errData = await response.json().catch(() => ({}));
+      alert(`Error en el servidor: ${errData.message || 'Verifica la consola de Spring Boot'}`);
+    }
+  } catch (err) {
+    console.error("Error en la petición PUT:", err);
+  }
+};
+
+  const handleCambiarRolAsignacion = async (proyectoId, asignacionId, nuevoRolId) => {
     try {
-      if (editId) {
-        // 1. Forzamos la actualización base del proyecto primero
-        await api.put(endpoint, dataCuerpo);
-        
-        // Si hay un usuario válido seleccionado, esperamos que la asignación termine
-        if (nuevo.usuarioId && nuevo.usuarioId.toString().trim() !== "") {
-          await api.post(`/proyectos/${editId}/usuarios/${nuevo.usuarioId}?rol=ROLE_ADMIN`);
-        }
-      } else {
-        // 2. Creación del nuevo proyecto
-        const response = await api.post(endpoint, dataCuerpo);
-        
-        if (nuevo.usuarioId && nuevo.usuarioId.toString().trim() !== "" && response.data) {
-          const nuevoProyectoId = response.data.id; 
-          await api.post(`/proyectos/${nuevoProyectoId}/usuarios/${nuevo.usuarioId}?rol=ROLE_ADMIN`);
-        }
-      }
+      const response = await fetch(`${API_BASE_URL}/${proyectoId}/asignaciones/${asignacionId}`, {
+        method: 'PUT',
+        headers: obtenerHeadersAutenticadas(),
+        body: JSON.stringify({ rolId: Number(nuevoRolId) })
+      });
+      if (response.ok) cargarDatosDashboard();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
-      cerrarModal();
-      
-      // 👇 RETRASO DE ASINCRONÍA DE SEGURIDAD (350ms)
-      // Evita que la pantalla se recargue antes de que Spring Boot guarde los cambios en la DB
-      setTimeout(() => {
-        window.location.reload();
-      }, 350);
-
-    } catch (error) {
-      if (error.response) {
-        console.error("Error del servidor:", error.response.status, error.response.data);
-        alert(`Error en el microservicio: ${error.response.status}`);
-      } else {
-        alert("Error de conexión al procesar la solicitud.");
+  const handleEliminarProyecto = async (proyectoId) => {
+    if (window.confirm('¿Seguro que deseas eliminar este proyecto de la suite?')) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/${proyectoId}`, { 
+          method: 'DELETE', 
+          headers: obtenerHeadersAutenticadas() 
+        });
+        if (response.ok) cargarDatosDashboard();
+      } catch (err) {
+        console.error(err);
       }
     }
   };
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
-      {/* NAVBAR CON SELECTOR DE VISTAS */}
-      <nav className="bg-slate-900 border-b border-slate-800 px-8 py-4 flex justify-between items-center sticky top-0 z-40 shadow-2xl">
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-600 p-2 rounded-xl">
-              <FolderKanban className="text-white" size={22} />
-            </div>
-            <span className="text-xl font-bold text-white italic tracking-tighter hidden md:block">Suite HealthTech</span>
-          </div>
+  const handleAbrirEditar = (proyecto) => {
+    setProyectoAEditar({ 
+      ...proyecto,
+      usuarioId: proyecto.usuarioId || ''
+    });
+    setIsEditarModalOpen(true);
+  };
 
-          {/* TABS DE NAVEGACIÓN */}
-          <div className="flex bg-slate-950 p-1 rounded-2xl border border-slate-800">
-            <button 
-              onClick={() => setVista('proyectos')}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${vista === 'proyectos' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              <LayoutDashboard size={14} /> PROYECTOS
-            </button>
-            <button 
-              onClick={() => setVista('usuarios')}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${vista === 'usuarios' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              <Users size={14} /> USUARIOS
-            </button>
+  // 🛡️ CORRECCIÓN AQUÍ: Evita que mapeos con asignaciones nulas o indefinidas rompan la app
+  const proyectosConNombresDeUsuario = (proyectos || []).map(proy => ({
+    ...proy,
+    asignaciones: (proy.asignaciones || []).map(asig => {
+      const usuarioEncontrado = (usuariosGlobales || []).find(u => u.id === asig.usuarioId);
+      return {
+        ...asig,
+        usuarioNombre: usuarioEncontrado ? usuarioEncontrado.username : `User ID: ${asig.usuarioId}`
+      };
+    })
+  }));
+
+  return (
+    <div className="min-h-screen bg-[#0a0f1d] text-white font-sans antialiased">
+      
+      {/* Cabecera / Navbar */}
+      <header className="border-b border-slate-900 bg-[#0b132b]/40 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-md shadow-indigo-600/20">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <path d="M19.5 21a3 3 0 003-3v-4.5a3 3 0 00-3-3h-1.5V9a3 3 0 00-3-3h-3.382l-.724-1.447A1.5 1.5 0 009.553 4H3.75A1.5 1.5 0 002.25 5.5v13.5A3 3 0 005.25 21h14.25z" />
+            </svg>
           </div>
+          <span className="text-lg font-black tracking-wider text-slate-100 uppercase">
+            Suite <span className="text-indigo-500">HealthTech</span>
+          </span>
         </div>
 
-        <button onClick={logout} className="flex items-center gap-2 bg-slate-800 hover:bg-red-600/20 text-slate-400 hover:text-red-500 px-5 py-2.5 rounded-2xl text-sm font-black transition-all border border-slate-700">
-          <LogOut size={18} /> SALIR
-        </button>
-      </nav>
+        <div className="flex items-center gap-6">
+          <nav className="flex gap-2">
+            <button onClick={() => setVistaActual('proyectos')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${vistaActual === 'proyectos' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-400 hover:text-slate-200'}`}>
+              Proyectos
+            </button>
+            <button onClick={() => setVistaActual('usuarios')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${vistaActual === 'usuarios' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-400 hover:text-slate-200'}`}>
+              Usuarios
+            </button>
+          </nav>
+          <button onClick={() => { localStorage.removeItem('token'); window.location.reload(); }} className="border border-slate-800 bg-slate-900/40 text-slate-400 hover:text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider">
+            ← Salir
+          </button>
+        </div>
+      </header>
 
-      <main className="p-8 max-w-7xl mx-auto">
-        {/* CONTENIDO DINÁMICO */}
-        {vista === 'proyectos' ? (
-          <>
-            <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-              <div>
-                <h1 className="text-6xl font-black mb-2 text-white tracking-tighter uppercase italic">Gestión</h1>
-                <p className="font-bold tracking-widest text-xs uppercase text-slate-500 ml-1">Control de Licencias / Microservicios</p>
-              </div>
-              <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-3 bg-blue-600 hover:bg-blue-50 text-white px-10 py-5 rounded-[2rem] font-black shadow-2xl transition-all hover:-translate-y-1">
-                <Plus size={24} strokeWidth={3} /> NUEVO PROYECTO
-              </button>
-            </header>
+      {/* Contenido de la Aplicación */}
+      <main className="max-w-7xl mx-auto px-6 py-12">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-6 pb-6 border-b border-slate-900">
+          <div>
+            <h1 className="text-5xl font-black uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400">
+              {vistaActual === 'proyectos' ? 'Gestión' : 'Personal'}
+            </h1>
+            <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">
+              Control de Licencias / Microservicios / Kafka
+            </p>
+          </div>
+          {vistaActual === 'proyectos' && (
+            <button onClick={() => setIsCrearModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs uppercase tracking-wider px-6 py-3.5 rounded-2xl flex items-center gap-2 shadow-lg shadow-indigo-600/20 transition-all">
+              Nuevo Proyecto
+            </button>
+          )}
+        </div>
 
-            {/* PASAMOS LOS USUARIOS AL COMPONENTE HIJO PARA EL CRUCE DE DATOS */}
-            <ListaProyectos onEditar={prepararEdicion} usuarios={usuariosDisponibles} />
-          </>
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-4">
+            <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-slate-500 text-xs font-black uppercase tracking-widest">Estableciendo conexiones...</p>
+          </div>
+        ) : error ? (
+          <div className="bg-rose-500/10 text-rose-400 p-6 rounded-2xl mt-8 text-sm font-semibold flex items-center justify-between">
+            <span>⚠️ Error: {error}</span>
+            <button onClick={cargarDatosDashboard} className="bg-rose-500 text-white font-bold px-4 py-2 rounded-xl text-xs uppercase tracking-wide">Sincronizar</button>
+          </div>
+        ) : vistaActual === 'proyectos' ? (
+          <ListaProyectos 
+            proyectos={proyectosConNombresDeUsuario} 
+            onEditar={handleAbrirEditar}
+            onEliminar={handleEliminarProyecto}
+            onCambiarRol={handleCambiarRolAsignacion} 
+          />
         ) : (
-          <GestionUsuarios />
-        )}
-
-        {/* MODAL PARA PROYECTOS */}
-        {isModalOpen && vista === 'proyectos' && (
-          <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl flex justify-center items-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-[3rem] w-full max-w-lg p-10 relative shadow-2xl overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-600 to-cyan-400"></div>
-              <button onClick={cerrarModal} className="absolute top-8 right-8 text-slate-500 hover:text-white"><X size={28} /></button>
-              
-              <h2 className="text-4xl font-black text-white mb-2 tracking-tighter uppercase italic">{editId ? 'Actualizar' : 'Configurar'}</h2>
-              <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-10">Data Integrity / Innovatech</p>
-
-              <form onSubmit={guardarProyecto} className="space-y-6">
-                <input type="text" required placeholder="Nombre del Proyecto" className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" 
-                  value={nuevo.nombre} onChange={e => setNuevo({...nuevo, nombre: e.target.value})} />
-                
-                <textarea rows="2" placeholder="Especificaciones..." className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" 
-                  value={nuevo.descripcion} onChange={e => setNuevo({...nuevo, descripcion: e.target.value})} />
-
-                <div className="grid grid-cols-2 gap-6">
-                  <input type="date" required className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white" 
-                    value={nuevo.fechaInicio} onChange={e => setNuevo({...nuevo, fechaInicio: e.target.value})} />
-                  <input type="date" required className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white" 
-                    value={nuevo.fechaEntrega} onChange={e => setNuevo({...nuevo, fechaEntrega: e.target.value})} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-6">
-                  <select className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white appearance-none outline-none focus:ring-2 focus:ring-blue-600" 
-                    value={nuevo.prioridad} onChange={e => setNuevo({...nuevo, prioridad: e.target.value})}>
-                    <option value="BAJA">Baja</option>
-                    <option value="MEDIA">Media</option>
-                    <option value="ALTA">Alta</option>
-                  </select>
-                  <div className="bg-blue-600/5 border border-blue-600/20 rounded-2xl p-4 flex items-start gap-2">
-                    <Info size={14} className="text-blue-500 mt-1 flex-shrink-0" />
-                    <p className="text-[9px] text-slate-500 font-bold uppercase leading-tight">Progreso automático activado.</p>
-                  </div>
-                </div>
-
-                {/* COMPONENTE SELECTOR DE RESPONSABLE */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Líder / Responsable de Proyecto</label>
-                  <select 
-                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white appearance-none outline-none focus:ring-2 focus:ring-blue-600"
-                    value={nuevo.usuarioId}
-                    onChange={e => setNuevo({...nuevo, usuarioId: e.target.value})}
-                  >
-                    <option value="">-- Dejar sin asignar (Opcional) --</option>
-                    {usuariosDisponibles.map(usr => (
-                      <option key={usr.id} value={usr.id}>
-                        {usr.nombre} {usr.apellido || ''} ({usr.email})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <button type="submit" className="w-full bg-white hover:bg-blue-50 text-slate-950 py-5 rounded-[2rem] font-black text-lg mt-6 shadow-2xl flex items-center justify-center gap-3 transition-all active:scale-95">
-                  <Save size={22} strokeWidth={3} /> {editId ? 'SINCRONIZAR' : 'ESTABLECER'}
-                </button>
-              </form>
-            </div>
+          <div className="mt-8 bg-[#0b132b]/30 border border-slate-800 rounded-3xl p-6">
+            <h3 className="text-lg font-bold mb-4">Usuarios en el sistema:</h3>
+            <ul className="space-y-2">
+              {(usuariosGlobales || []).map(u => (
+                <li key={u.id} className="p-3 bg-[#1c2541]/40 border border-slate-800 rounded-xl text-xs font-mono text-sky-400">
+                  ID: {u.id} — Username: <span className="text-white font-bold">{u.username}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </main>
+
+      {/* 🟦 COMPONENTE TARJETA: CREAR PROYECTO */}
+      {isCrearModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-[#0b132b] border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl my-8">
+            <h2 className="text-xl font-black uppercase tracking-wide border-b border-slate-800 pb-3 mb-4 text-indigo-400">Nueva Tarjeta de Proyecto</h2>
+            <form onSubmit={handleGuardarNuevoProyecto} className="space-y-4">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Nombre del Proyecto</label>
+                  <input type="text" required className="w-full bg-[#1c2541]/50 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500" value={nuevoProyecto.nombre} onChange={(e) => setNuevoProyecto({...nuevoProyecto, nombre: e.target.value})}/>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Prioridad (Nivel de Criticidad)</label>
+                  <select className="w-full bg-[#1c2541] border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500" value={nuevoProyecto.prioridad} onChange={(e) => setNuevoProyecto({...nuevoProyecto, prioridad: e.target.value})}>
+                    <option value="BAJA">BAJA</option>
+                    <option value="MEDIA">MEDIA</option>
+                    <option value="ALTA">ALTA</option>
+                    <option value="URGENTE">URGENTE</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Descripción de Objetivos</label>
+                <textarea className="w-full bg-[#1c2541]/50 border border-slate-800 rounded-xl p-3 text-sm text-white h-20 resize-none focus:outline-none focus:border-indigo-500" value={nuevoProyecto.descripcion} onChange={(e) => setNuevoProyecto({...nuevoProyecto, descripcion: e.target.value})}/>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Fecha de Inicio</label>
+                  <input type="date" className="w-full bg-[#1c2541]/50 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none" value={nuevoProyecto.fechaInicio} onChange={(e) => setNuevoProyecto({...nuevoProyecto, fechaInicio: e.target.value})}/>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Fecha de Entrega</label>
+                  <input type="date" className="w-full bg-[#1c2541]/50 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none" value={nuevoProyecto.fechaEntrega} onChange={(e) => setNuevoProyecto({...nuevoProyecto, fechaEntrega: e.target.value})}/>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Asignar Responsable Principal</label>
+                  <select className="w-full bg-[#1c2541] border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none" value={nuevoProyecto.usuarioId} onChange={(e) => setNuevoProyecto({...nuevoProyecto, usuarioId: e.target.value})}>
+                    <option value="">-- Seleccionar Usuario --</option>
+                    {(usuariosGlobales || []).map(u => (
+                      <option key={u.id} value={u.id}>{u.username}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Establecer Porcentaje Avance ({nuevoProyecto.progresoPorcentaje}%)</label>
+                  <input type="range" min="0" max="100" className="w-full accent-indigo-500" value={nuevoProyecto.progresoPorcentaje} onChange={(e) => setNuevoProyecto({...nuevoProyecto, progresoPorcentaje: e.target.value})}/>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-800">
+                <button type="button" onClick={() => setIsCrearModalOpen(false)} className="w-1/2 border border-slate-800 hover:bg-slate-900 rounded-xl py-3 text-xs font-bold uppercase tracking-wider text-slate-400">Cancelar</button>
+                <button type="submit" className="w-1/2 bg-indigo-600 hover:bg-indigo-500 rounded-xl py-3 text-xs font-black uppercase tracking-wider text-white">Crear Proyecto</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 🟨 COMPONENTE TARJETA: MODIFICAR PROYECTO */}
+      {isEditarModalOpen && proyectoAEditar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-[#0b132b] border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl my-8">
+            <h2 className="text-xl font-black uppercase tracking-wide border-b border-slate-800 pb-3 mb-4 text-amber-400">Modificar Tarjeta de Proyecto</h2>
+            <form onSubmit={handleGuardarEdicionProyecto} className="space-y-4">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Nombre del Proyecto</label>
+                  <input type="text" required className="w-full bg-[#1c2541]/50 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500" value={proyectoAEditar.nombre} onChange={(e) => setProyectoAEditar({...proyectoAEditar, nombre: e.target.value})}/>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Prioridad (Nivel de Criticidad)</label>
+                  <select className="w-full bg-[#1c2541] border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500" value={proyectoAEditar.prioridad || 'MEDIA'} onChange={(e) => setProyectoAEditar({...proyectoAEditar, prioridad: e.target.value})}>
+                    <option value="BAJA">BAJA</option>
+                    <option value="MEDIA">MEDIA</option>
+                    <option value="ALTA">ALTA</option>
+                    <option value="URGENTE">URGENTE</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Descripción de Objetivos</label>
+                <textarea className="w-full bg-[#1c2541]/50 border border-slate-800 rounded-xl p-3 text-sm text-white h-20 resize-none focus:outline-none focus:border-amber-500" value={proyectoAEditar.descripcion || ''} onChange={(e) => setProyectoAEditar({...proyectoAEditar, descripcion: e.target.value})}/>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Fecha de Inicio</label>
+                  <input type="date" className="w-full bg-[#1c2541]/50 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none" value={proyectoAEditar.fechaInicio || ''} onChange={(e) => setProyectoAEditar({...proyectoAEditar, fechaInicio: e.target.value})}/>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Fecha de Entrega</label>
+                  <input type="date" className="w-full bg-[#1c2541]/50 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none" value={proyectoAEditar.fechaEntrega || ''} onChange={(e) => setProyectoAEditar({...proyectoAEditar, fechaEntrega: e.target.value})}/>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Modificar Responsable Principal</label>
+                  <select 
+                    className="w-full bg-[#1c2541] border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500" 
+                    value={proyectoAEditar.usuarioId || ''} 
+                    onChange={(e) => setProyectoAEditar({...proyectoAEditar, usuarioId: e.target.value})}
+                  >
+                    <option value="">-- Sin Responsable --</option>
+                    {(usuariosGlobales || []).map(u => (
+                      <option key={u.id} value={u.id}>{u.username}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Modificar Avance ({proyectoAEditar.progresoPorcentaje || 0}%)</label>
+                  <input type="range" min="0" max="100" className="w-full accent-amber-500" value={proyectoAEditar.progresoPorcentaje || 0} onChange={(e) => setProyectoAEditar({...proyectoAEditar, progresoPorcentaje: Number(e.target.value)})}/>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-800">
+                <button type="button" onClick={() => { setIsEditarModalOpen(false); setProyectoAEditar(null); }} className="w-1/2 border border-slate-800 hover:bg-slate-900 rounded-xl py-3 text-xs font-bold uppercase tracking-wider text-slate-400">Cancelar</button>
+                <button type="submit" className="w-1/2 bg-amber-500 hover:bg-amber-400 rounded-xl py-3 text-xs font-black uppercase tracking-wider text-black">Guardar Cambios</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
-};
-
-export default Dashboard;
+}

@@ -1,151 +1,130 @@
-import React, { useState, useEffect } from 'react';
-import api from '../api/axios'; 
-import { Calendar, ShieldCheck, Clock, Hash, Trash2, Edit3, User } from 'lucide-react';
+import React from 'react';
 
-const ListaProyectos = ({ onEditar, usuarios = [] }) => {
-  const [proyectos, setProyectos] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const cargarProyectos = async () => {
-  try {
-    // 👇 Añadimos cabeceras de control de caché para revalidar el microservicio de inmediato
-    const response = await api.get('/proyectos', {
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      }
-    });
-    
-    setProyectos(Array.isArray(response.data) ? response.data : []);
-  } catch (err) {
-    console.error("Error al conectar con el Gateway desde proyectos:", err);
-  } finally {
-    setLoading(false);
-  }
-};
-
-  useEffect(() => {
-    cargarProyectos();
-  }, []);
-
-  const eliminarProyecto = async (id) => {
-    if (!window.confirm("¿Estás seguro de eliminar este proyecto de la Suite HealthTech?")) return;
-    try {
-      const res = await api.delete(`/proyectos/${id}`);
-      if (res.status === 200 || res.status === 204) {
-        setProyectos(proyectos.filter(p => p.id !== id));
-      }
-    } catch (err) {
-      alert("Error al intentar eliminar el proyecto.");
-    }
+export default function ListaProyectos({ proyectos, onEditar, onEliminar, onCambiarRol }) {
+  
+  const obtenerNombreRol = (rolId) => {
+    const id = Number(rolId);
+    if (id === 1) return 'ROLE_ADMIN';
+    if (id === 2) return 'ROLE_DEVELOPER';
+    if (id === 3) return 'ROLE_TESTER';
+    return `ROL ID: ${rolId}`; 
   };
 
-  if (loading) return <div className="text-center py-20 text-blue-500 font-bold animate-pulse">SINCRONIZANDO...</div>;
-
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {proyectos.length === 0 ? (
-        <div className="text-slate-500 text-center col-span-2 py-10">No se encontraron proyectos disponibles.</div>
-      ) : (
-        proyectos.map((p) => {
-          // Extraemos la lista de asignaciones buscando variantes comunes por seguridad
-          const listaAsignaciones = p.asignaciones || p.usuariosAsignados || p.colaboradores || [];
-
-          return (
-            <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl group hover:border-blue-500/40 transition-all relative overflow-hidden">
-              
-              {/* Botones de Acción rápidos */}
-              <div className="absolute top-4 right-4 flex gap-2">
-                <button 
-                  onClick={() => onEditar(p)}
-                  className="p-2 bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white rounded-xl transition-all"
-                >
-                  <Edit3 size={16} />
-                </button>
-                <button 
-                  onClick={() => eliminarProyecto(p.id)}
-                  className="p-2 bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white rounded-xl transition-all"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-
-              <div className="flex items-center gap-3 mb-4">
-                <div className="bg-slate-800 p-2 rounded-lg text-slate-500"><Hash size={16} /></div>
-                <h3 className="text-xl font-bold text-white pr-16">{p.nombre}</h3>
-              </div>
-
-              <p className="text-slate-400 text-sm mb-6 line-clamp-2 min-h-[40px]">{p.descripcion}</p>
-
-              <div className="grid grid-cols-2 gap-4 mb-4 bg-slate-950/50 p-4 rounded-2xl border border-slate-800/50">
-                <div className="flex items-center gap-2">
-                  <Calendar size={14} className="text-slate-500" />
-                  <span className="text-xs font-mono text-slate-300">{p.fechaInicio}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock size={14} className="text-slate-500" />
-                  <span className="text-xs font-mono text-slate-300">{p.fechaEntrega || 'Sin fecha'}</span>
-                </div>
-              </div>
-
-              {/* BLOQUE DE PERSONAL ASIGNADO */}
-              <div className="mb-6 space-y-2 bg-slate-950/35 px-4 py-3 rounded-2xl border border-slate-800/60">
-                <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <User size={12} className="text-slate-500" /> Personal Asignado:
-                </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
+      {proyectos.map((proyecto) => {
+        return (
+          <div key={proyecto.id} className="bg-[#0b132b]/50 backdrop-blur-md border border-slate-800 rounded-3xl p-6 flex flex-col justify-between shadow-xl">
+            
+            {/* Cabecera de la Tarjeta */}
+            <div>
+              <div className="flex justify-between items-start">
+                <h3 className="text-xl font-black text-white uppercase tracking-wide truncate max-w-[70%]" title={proyecto.nombre}>
+                  <span className="text-slate-500 mr-1">#</span> {proyecto.nombre}
+                </h3>
                 
-                {listaAsignaciones.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {listaAsignaciones.map((asig, index) => {
-                      // Buscamos el ID del usuario soportando estructuras planas o anidadas
-                      const uId = asig.usuarioId || asig.id || asig;
-                      const datosUsuario = usuarios.find(u => String(u.id) === String(uId));
-                      
-                      return (
-                        <div 
-                          key={asig.id || index} 
-                          className="flex flex-col bg-blue-500/10 border border-blue-500/25 px-3 py-1.5 rounded-xl"
-                        >
-                          <span className="text-xs text-blue-400 font-bold">
-                            {datosUsuario 
-                              ? `${datosUsuario.nombre} ${datosUsuario.apellido || ''}` 
-                              : `ID Usuario: ${uId}`}
-                          </span>
-                          <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest mt-0.5">
-                            {asig.rol || asig.role || 'ROLE_ADMIN'}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <span className="text-xs text-slate-600 italic block pl-1">Sin asignar</span>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex justify-between items-end">
-                  <div className="flex items-center gap-2 text-green-400">
-                    <ShieldCheck size={14} />
-                    <span className="text-[10px] font-black uppercase">{p.estadoCalculado || 'A TIEMPO'}</span>
-                  </div>
-                  <span className="text-xl font-black text-white">{p.progresoPorcentaje}%</span>
-                </div>
-                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                  <div 
-                    className={`h-full transition-all duration-1000 ${p.progresoPorcentaje === 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} 
-                    style={{ width: `${p.progresoPorcentaje}%` }}
-                  ></div>
+                {/* Botones de Acción (Editar y Eliminar) */}
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => onEditar && onEditar(proyecto)}
+                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                    title="Editar Proyecto"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                    </svg>
+                  </button>
+                  
+                  <button 
+                    onClick={() => onEliminar && onEliminar(proyecto.id)}
+                    className="p-1.5 hover:bg-slate-800 rounded-lg text-rose-500 hover:text-rose-400 transition-colors"
+                    title="Eliminar Proyecto"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                    </svg>
+                  </button>
                 </div>
               </div>
 
+              {/* Descripción */}
+              <p className="text-slate-400 text-sm mt-2 font-medium line-clamp-2 min-h-[40px]">
+                {proyecto.descripcion || "Sin descripción disponible."}
+              </p>
+
+              {/* Fechas con selectores nativos sincronizados */}
+              <div className="flex gap-4 mt-4 text-xs font-semibold text-slate-400 bg-[#1c2541]/40 p-2.5 rounded-xl border border-slate-800/60">
+                <div className="flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 text-slate-500">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                  </svg>
+                  <span>{proyecto.fechaInicio || 'N/A'}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 text-slate-500">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>{proyecto.fechaEntrega || 'N/A'}</span>
+                </div>
+              </div>
+
+              {/* Personal Asignado */}
+              <div className="mt-5">
+                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                  Personal Asignado:
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {proyecto.asignaciones && proyecto.asignaciones.length > 0 ? (
+                    proyecto.asignaciones.map((asig) => (
+                      <div 
+                        key={asig.id} 
+                        className="bg-[#1c2541]/60 border border-slate-800 p-2.5 rounded-xl flex flex-col justify-center min-h-[50px] hover:border-indigo-500/40 transition-all group cursor-pointer"
+                        onClick={() => onCambiarRol && onCambiarRol(proyecto.id, asig.id, asig.rolId === 1 ? 2 : 1)} 
+                        title="Haz clic para alternar el rol de este usuario"
+                      >
+                        <span className="text-xs font-bold text-sky-400 truncate">
+                          {asig.usuarioNombre} 
+                        </span>
+                        
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider mt-0.5 group-hover:text-slate-400 transition-colors">
+                          {obtenerNombreRol(asig.rolId)}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-xs italic text-slate-600 col-span-2">Sin personal asignado</span>
+                  )}
+                </div>
+              </div>
             </div>
-          );
-        })
-      )}
+
+            {/* Footer de la Tarjeta (Barra y Progreso Dinámico) */}
+            <div className="mt-6 pt-4 border-t border-slate-800/60 flex flex-col gap-2">
+              <div className="flex justify-between items-center text-xs font-black">
+                <span className={`uppercase tracking-wider ${
+                  proyecto.estadoCalculado === 'COMPLETADO' ? 'text-emerald-400' :
+                  proyecto.estadoCalculado === 'ATRASADO' ? 'text-rose-500' :
+                  proyecto.estadoCalculado?.includes('CRÍTICO') ? 'text-amber-400' : 'text-sky-400'
+                }`}>
+                  {proyecto.estadoCalculado || 'A TIEMPO'}
+                </span>
+                <span className="text-white text-lg italic">{proyecto.progresoPorcentaje || 0}%</span>
+              </div>
+              
+              <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-500 ${
+                    proyecto.estadoCalculado === 'COMPLETADO' ? 'bg-emerald-400' :
+                    proyecto.estadoCalculado === 'ATRASADO' ? 'bg-rose-500' : 'bg-sky-500'
+                  }`}
+                  style={{ width: `${proyecto.progresoPorcentaje || 0}%` }}
+                />
+              </div>
+            </div>
+
+          </div>
+        );
+      })}
     </div>
   );
-};
-
-export default ListaProyectos;
+}
