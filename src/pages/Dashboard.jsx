@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
-import ListaProyectos from '../components/ListaProyectos';
-import GestionUsuarios from './GestionUsuarios'; // Asegúrate de que el nombre del archivo coincida
 import { LogOut, FolderKanban, Plus, X, Save, Info, Users, LayoutDashboard } from 'lucide-react';
+
+// REORDENADO E IMPORTS LIMPIOS
+import ListaProyectos from '../components/ListaProyectos';
+import GestionUsuarios from './GestionUsuarios'; 
 
 const Dashboard = () => {
   const { logout } = useAuth();
@@ -13,17 +16,36 @@ const Dashboard = () => {
   // ESTADOS DE MODAL Y FORMULARIO
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editId, setEditId] = useState(null);
+  
+  // ESTADO PARA ALMACENAR USUARIOS DESDE EL MICROSERVICIO
+  const [usuariosDisponibles, setUsuariosDisponibles] = useState([]);
+
   const [nuevo, setNuevo] = useState({
     nombre: '',
     descripcion: '',
     fechaInicio: new Date().toISOString().split('T')[0],
     fechaEntrega: '',
     prioridad: 'MEDIA',
-    progresoPorcentaje: 0
+    progresoPorcentaje: 0,
+    usuarioId: '' // ID del usuario seleccionado
   });
+
+  // Efecto para obtener la lista de usuarios disponibles al montar el dashboard
+  useEffect(() => {
+    const obtenerUsuarios = async () => {
+      try {
+        const response = await api.get('/usuarios'); 
+        setUsuariosDisponibles(Array.isArray(response.data) ? response.data : []);
+      } catch (error) {
+        console.error("Error al cargar la lista de usuarios:", error);
+      }
+    };
+    obtenerUsuarios();
+  }, []);
 
   // --- Lógica de Cálculo Automático de Tiempo ---
   const calcularProgresoDesdeFechas = (inicio, fin) => {
+    if (!inicio || !fin) return 0;
     const fInicio = new Date(inicio);
     const fFin = new Date(fin);
     const hoy = new Date();
@@ -31,12 +53,24 @@ const Dashboard = () => {
     if (hoy > fFin) return 100;
     const total = fFin - fInicio;
     const transcurrido = hoy - fInicio;
-    const porcentaje = Math.round((transcurrido / total) * 100);
-    return Math.min(100, Math.max(0, porcentaje));
+    return Math.min(100, Math.max(0, Math.round((transcurrido / total) * 100)));
   };
 
   const prepararEdicion = (proyecto) => {
-    setNuevo(proyecto);
+    // Buscamos si ya tiene un usuario asignado en su arreglo para preseleccionar en el menú
+    const primeraAsignacion = proyecto.asignaciones && proyecto.asignaciones.length > 0 
+      ? proyecto.asignaciones[0].usuarioId 
+      : '';
+
+    setNuevo({
+      nombre: proyecto.nombre || '',
+      descripcion: proyecto.descripcion || '',
+      fechaInicio: proyecto.fechaInicio || new Date().toISOString().split('T')[0],
+      fechaEntrega: proyecto.fechaEntrega || '',
+      prioridad: proyecto.prioridad || 'MEDIA',
+      progresoPorcentaje: proyecto.progresoPorcentaje || 0,
+      usuarioId: primeraAsignacion || proyecto.usuarioId || '' 
+    });
     setEditId(proyecto.id);
     setIsModalOpen(true);
   };
@@ -47,30 +81,60 @@ const Dashboard = () => {
     setNuevo({
       nombre: '', descripcion: '',
       fechaInicio: new Date().toISOString().split('T')[0],
-      fechaEntrega: '', prioridad: 'MEDIA', progresoPorcentaje: 0
+      fechaEntrega: '', prioridad: 'MEDIA', progresoPorcentaje: 0,
+      usuarioId: ''
     });
   };
 
   const guardarProyecto = async (e) => {
     e.preventDefault();
     const progresoCalculado = calcularProgresoDesdeFechas(nuevo.fechaInicio, nuevo.fechaEntrega);
-    const url = editId ? `http://localhost:8085/api/proyectos/${editId}` : 'http://localhost:8085/api/proyectos';
-    const metodo = editId ? 'PUT' : 'POST';
+    
+    const endpoint = editId ? `/proyectos/${editId}` : '/proyectos';
+    
+    const dataCuerpo = { 
+      nombre: nuevo.nombre,
+      descripcion: nuevo.descripcion,
+      fechaInicio: nuevo.fechaInicio,
+      fechaEntrega: nuevo.fechaEntrega,
+      prioridad: nuevo.prioridad,
+      progresoPorcentaje: progresoCalculado
+    };
 
     try {
-      const response = await fetch(url, {
-        method: metodo,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...nuevo, progresoPorcentaje: progresoCalculado })
-      });
-      if (response.ok) {
-        cerrarModal();
-        window.location.reload();
+      if (editId) {
+        // 1. Forzamos la actualización base del proyecto primero
+        await api.put(endpoint, dataCuerpo);
+        
+        // Si hay un usuario válido seleccionado, esperamos que la asignación termine
+        if (nuevo.usuarioId && nuevo.usuarioId.toString().trim() !== "") {
+          await api.post(`/proyectos/${editId}/usuarios/${nuevo.usuarioId}?rol=ROLE_ADMIN`);
+        }
       } else {
-        alert("Error en el microservicio.");
+        // 2. Creación del nuevo proyecto
+        const response = await api.post(endpoint, dataCuerpo);
+        
+        if (nuevo.usuarioId && nuevo.usuarioId.toString().trim() !== "" && response.data) {
+          const nuevoProyectoId = response.data.id; 
+          await api.post(`/proyectos/${nuevoProyectoId}/usuarios/${nuevo.usuarioId}?rol=ROLE_ADMIN`);
+        }
       }
+
+      cerrarModal();
+      
+      // 👇 RETRASO DE ASINCRONÍA DE SEGURIDAD (350ms)
+      // Evita que la pantalla se recargue antes de que Spring Boot guarde los cambios en la DB
+      setTimeout(() => {
+        window.location.reload();
+      }, 350);
+
     } catch (error) {
-      alert("Error de conexión.");
+      if (error.response) {
+        console.error("Error del servidor:", error.response.status, error.response.data);
+        alert(`Error en el microservicio: ${error.response.status}`);
+      } else {
+        alert("Error de conexión al procesar la solicitud.");
+      }
     }
   };
 
@@ -109,7 +173,7 @@ const Dashboard = () => {
       </nav>
 
       <main className="p-8 max-w-7xl mx-auto">
-        {/* CONTENIDO DINÁMICO SEGÚN LA VISTA */}
+        {/* CONTENIDO DINÁMICO */}
         {vista === 'proyectos' ? (
           <>
             <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
@@ -117,18 +181,19 @@ const Dashboard = () => {
                 <h1 className="text-6xl font-black mb-2 text-white tracking-tighter uppercase italic">Gestión</h1>
                 <p className="font-bold tracking-widest text-xs uppercase text-slate-500 ml-1">Control de Licencias / Microservicios</p>
               </div>
-              <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-3 bg-blue-600 hover:bg-blue-500 text-white px-10 py-5 rounded-[2rem] font-black shadow-2xl transition-all hover:-translate-y-1">
+              <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-3 bg-blue-600 hover:bg-blue-50 text-white px-10 py-5 rounded-[2rem] font-black shadow-2xl transition-all hover:-translate-y-1">
                 <Plus size={24} strokeWidth={3} /> NUEVO PROYECTO
               </button>
             </header>
 
-            <ListaProyectos onEditar={prepararEdicion} />
+            {/* PASAMOS LOS USUARIOS AL COMPONENTE HIJO PARA EL CRUCE DE DATOS */}
+            <ListaProyectos onEditar={prepararEdicion} usuarios={usuariosDisponibles} />
           </>
         ) : (
           <GestionUsuarios />
         )}
 
-        {/* MODAL PARA PROYECTOS (Solo se abre si estamos en la vista proyectos) */}
+        {/* MODAL PARA PROYECTOS */}
         {isModalOpen && vista === 'proyectos' && (
           <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl flex justify-center items-center z-50 p-4">
             <div className="bg-slate-900 border border-slate-800 rounded-[3rem] w-full max-w-lg p-10 relative shadow-2xl overflow-hidden">
@@ -153,7 +218,7 @@ const Dashboard = () => {
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">
-                  <select className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white appearance-none" 
+                  <select className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white appearance-none outline-none focus:ring-2 focus:ring-blue-600" 
                     value={nuevo.prioridad} onChange={e => setNuevo({...nuevo, prioridad: e.target.value})}>
                     <option value="BAJA">Baja</option>
                     <option value="MEDIA">Media</option>
@@ -163,6 +228,23 @@ const Dashboard = () => {
                     <Info size={14} className="text-blue-500 mt-1 flex-shrink-0" />
                     <p className="text-[9px] text-slate-500 font-bold uppercase leading-tight">Progreso automático activado.</p>
                   </div>
+                </div>
+
+                {/* COMPONENTE SELECTOR DE RESPONSABLE */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Líder / Responsable de Proyecto</label>
+                  <select 
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white appearance-none outline-none focus:ring-2 focus:ring-blue-600"
+                    value={nuevo.usuarioId}
+                    onChange={e => setNuevo({...nuevo, usuarioId: e.target.value})}
+                  >
+                    <option value="">-- Dejar sin asignar (Opcional) --</option>
+                    {usuariosDisponibles.map(usr => (
+                      <option key={usr.id} value={usr.id}>
+                        {usr.nombre} {usr.apellido || ''} ({usr.email})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <button type="submit" className="w-full bg-white hover:bg-blue-50 text-slate-950 py-5 rounded-[2rem] font-black text-lg mt-6 shadow-2xl flex items-center justify-center gap-3 transition-all active:scale-95">
