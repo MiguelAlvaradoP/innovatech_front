@@ -1,130 +1,96 @@
 import React from 'react';
+import { X, Edit3, Trash2, Calendar } from 'lucide-react';
 
-export default function ListaProyectos({ proyectos, onEditar, onEliminar, onCambiarRol }) {
-  
-  const obtenerNombreRol = (rolId) => {
-    const id = Number(rolId);
-    if (id === 1) return 'ROLE_ADMIN';
-    if (id === 2) return 'ROLE_DEVELOPER';
-    if (id === 3) return 'ROLE_TESTER';
-    return `ROL ID: ${rolId}`; 
-  };
-
+export default function ListaProyectos({ proyectos, onEditar, onEliminar, onCambiarRol, onDesasignar }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
-      {proyectos.map((proyecto) => {
-        return (
-          <div key={proyecto.id} className="bg-[#0b132b]/50 backdrop-blur-md border border-slate-800 rounded-3xl p-6 flex flex-col justify-between shadow-xl">
-            
-            {/* Cabecera de la Tarjeta */}
-            <div>
-              <div className="flex justify-between items-start">
-                <h3 className="text-xl font-black text-white uppercase tracking-wide truncate max-w-[70%]" title={proyecto.nombre}>
-                  <span className="text-slate-500 mr-1">#</span> {proyecto.nombre}
-                </h3>
-                
-                {/* Botones de Acción (Editar y Eliminar) */}
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => onEditar && onEditar(proyecto)}
-                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                    title="Editar Proyecto"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
-                    </svg>
-                  </button>
-                  
-                  <button 
-                    onClick={() => onEliminar && onEliminar(proyecto.id)}
-                    className="p-1.5 hover:bg-slate-800 rounded-lg text-rose-500 hover:text-rose-400 transition-colors"
-                    title="Eliminar Proyecto"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              {/* Descripción */}
-              <p className="text-slate-400 text-sm mt-2 font-medium line-clamp-2 min-h-[40px]">
-                {proyecto.descripcion || "Sin descripción disponible."}
-              </p>
-
-              {/* Fechas con selectores nativos sincronizados */}
-              <div className="flex gap-4 mt-4 text-xs font-semibold text-slate-400 bg-[#1c2541]/40 p-2.5 rounded-xl border border-slate-800/60">
-                <div className="flex items-center gap-1">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 text-slate-500">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                  </svg>
-                  <span>{proyecto.fechaInicio || 'N/A'}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 text-slate-500">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>{proyecto.fechaEntrega || 'N/A'}</span>
-                </div>
-              </div>
-
-              {/* Personal Asignado */}
-              <div className="mt-5">
-                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                  Personal Asignado:
-                </h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {proyecto.asignaciones && proyecto.asignaciones.length > 0 ? (
-                    proyecto.asignaciones.map((asig) => (
-                      <div 
-                        key={asig.id} 
-                        className="bg-[#1c2541]/60 border border-slate-800 p-2.5 rounded-xl flex flex-col justify-center min-h-[50px] hover:border-indigo-500/40 transition-all group cursor-pointer"
-                        onClick={() => onCambiarRol && onCambiarRol(proyecto.id, asig.id, asig.rolId === 1 ? 2 : 1)} 
-                        title="Haz clic para alternar el rol de este usuario"
-                      >
-                        <span className="text-xs font-bold text-sky-400 truncate">
-                          {asig.usuarioNombre} 
-                        </span>
-                        
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider mt-0.5 group-hover:text-slate-400 transition-colors">
-                          {obtenerNombreRol(asig.rolId)}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <span className="text-xs italic text-slate-600 col-span-2">Sin personal asignado</span>
-                  )}
-                </div>
-              </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+      {proyectos.map((proy) => (
+        <div key={proy.id} className="bg-[#0b132b]/40 border border-slate-900 rounded-3xl p-6 relative backdrop-blur-md flex flex-col justify-between">
+          
+          <div>
+            {/* Botones de Acción del Proyecto (Editar/Eliminar) */}
+            <div className="absolute top-6 right-6 flex gap-2">
+              <button onClick={() => onEditar(proy)} className="p-2 bg-slate-900/60 hover:bg-amber-500/20 text-slate-400 hover:text-amber-400 rounded-xl transition-all">
+                <Edit3 size={14} />
+              </button>
+              <button onClick={() => onEliminar(proy.id)} className="p-2 bg-slate-900/60 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-xl transition-all">
+                <Trash2 size={14} />
+              </button>
             </div>
 
-            {/* Footer de la Tarjeta (Barra y Progreso Dinámico) */}
-            <div className="mt-6 pt-4 border-t border-slate-800/60 flex flex-col gap-2">
-              <div className="flex justify-between items-center text-xs font-black">
-                <span className={`uppercase tracking-wider ${
-                  proyecto.estadoCalculado === 'COMPLETADO' ? 'text-emerald-400' :
-                  proyecto.estadoCalculado === 'ATRASADO' ? 'text-rose-500' :
-                  proyecto.estadoCalculado?.includes('CRÍTICO') ? 'text-amber-400' : 'text-sky-400'
-                }`}>
-                  {proyecto.estadoCalculado || 'A TIEMPO'}
-                </span>
-                <span className="text-white text-lg italic">{proyecto.progresoPorcentaje || 0}%</span>
-              </div>
-              
-              <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full transition-all duration-500 ${
-                    proyecto.estadoCalculado === 'COMPLETADO' ? 'bg-emerald-400' :
-                    proyecto.estadoCalculado === 'ATRASADO' ? 'bg-rose-500' : 'bg-sky-500'
-                  }`}
-                  style={{ width: `${proyecto.progresoPorcentaje || 0}%` }}
-                />
-              </div>
+            {/* Info Básica */}
+            <h3 className="text-xl font-black uppercase tracking-tight text-slate-100 flex items-center gap-2">
+              <span className="text-indigo-500 font-mono">#</span> {proy.nombre}
+            </h3>
+            <p className="text-slate-400 text-xs mt-1 h-8 line-clamp-2">{proy.descripcion}</p>
+
+            {/* Fechas */}
+            <div className="flex gap-4 mt-4 text-[11px] font-mono text-slate-500">
+              <span className="flex items-center gap-1"><Calendar size={12}/> {proy.fechaInicio || 'N/A'}</span>
+              <span className="flex items-center gap-1"><Calendar size={12}/> {proy.fechaEntrega || 'N/A'}</span>
             </div>
 
+            {/* SECCIÓN DEL PERSONAL ASIGNADO */}
+            <div className="mt-6">
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Personal Asignado:</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {(proy.asignaciones || []).map((asig) => (
+                  <div key={asig.id} className="bg-[#1c2541]/30 border border-slate-800/60 rounded-xl p-3 flex justify-between items-center group/user">
+                    <div>
+                      <p className="text-xs font-bold text-slate-200">{asig.usuarioNombre}</p>
+                      <p className="text-[9px] font-mono text-slate-500 uppercase mt-0.5">
+                        {asig.rolNombre || `Rol ID: ${asig.rolId || 'NULL'}`}
+                      </p>
+                    </div>
+                    
+                    {/* BOTÓN DE DESASIGNACIÓN */}
+                    <button 
+                      type="button"
+                      onClick={() => onDesasignar(proy.id, asig.id, asig.usuarioNombre)}
+                      className="p-1 bg-slate-950/40 hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 rounded-md transition-all opacity-60 group-hover/user:opacity-100"
+                      title="Desasignar usuario"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-        );
-      })}
+
+          {/* Sección Inferior: Estado y Barra de Progreso Dinámica */}
+          <div className="mt-6 pt-4 border-t border-slate-900/60 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className={`text-[10px] font-black px-2.5 py-1 rounded-md tracking-wider uppercase ${
+                proy.progresoPorcentaje === 100 
+                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  : proy.estadoCalculado === 'CRÍTICO' || proy.estadoCalculado === 'CRÍTICO (Próximo a vencer)'
+                    ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' 
+                    : 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
+              }`}>
+                {proy.progresoPorcentaje === 100 ? 'COMPLETADO' : proy.estadoCalculado}
+              </span>
+              <span className="text-xs font-mono font-bold text-slate-400">{proy.progresoPorcentaje}%</span>
+            </div>
+
+            {/* Contenedor de la barra (Fondo hundido) */}
+            <div className="w-full h-2 bg-slate-950/60 rounded-full overflow-hidden border border-slate-900">
+              {/* Relleno dinámico mapeado al % de Spring Boot */}
+              <div 
+                className={`h-full rounded-full transition-all duration-500 ease-out ${
+                  proy.progresoPorcentaje === 100 
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_0_12px_rgba(16,185,129,0.2)]' 
+                    : proy.estadoCalculado === 'CRÍTICO' || proy.estadoCalculado === 'CRÍTICO (Próximo a vencer)'
+                      ? 'bg-gradient-to-r from-rose-500 to-orange-500 shadow-[0_0_12px_rgba(244,63,94,0.2)]'
+                      : 'bg-gradient-to-r from-indigo-500 to-sky-500 shadow-[0_0_12px_rgba(99,102,241,0.2)]'
+                }`}
+                style={{ width: `${proy.progresoPorcentaje}%` }}
+              />
+            </div>
+          </div>
+
+        </div>
+      ))}
     </div>
   );
 }

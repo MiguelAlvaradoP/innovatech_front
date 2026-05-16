@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ListaProyectos from '../components/ListaProyectos'; 
+import GestionUsuarios from './GestionUsuarios'; 
 
 export default function Dashboard() {
   const [proyectos, setProyectos] = useState([]);
@@ -20,7 +21,7 @@ export default function Dashboard() {
     fechaEntrega: '',
     prioridad: 'MEDIA',
     progresoPorcentaje: 0,
-    usuarioId: '', // Dueño o usuario principal asignado al proyecto
+    usuarioId: '', 
     tasks: [],
     asignaciones: [],
     estadoCalculado: 'A TIEMPO'
@@ -82,84 +83,131 @@ export default function Dashboard() {
     cargarDatosDashboard();
   }, []);
 
+  // FUNCIÓN PARA ASIGNAR EL USUARIO AL PROYECTO MEDIANTE EL ENDPOINT ESPECÍFICO
+  const handleAsignarUsuarioAProyecto = async (proyectoId, usuarioId) => {
+    if (!usuarioId) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/${proyectoId}/usuarios/${usuarioId}`, {
+        method: 'POST',
+        headers: obtenerHeadersAutenticadas()
+      });
+
+      if (!response.ok) {
+        const errTexto = await response.text();
+        console.error("⚠️ Error en endpoint de asignación:", errTexto);
+      }
+    } catch (err) {
+      console.error("❌ Fallo crítico al conectar con endpoint de asignación:", err);
+    }
+  };
+
+  // NUEVA FUNCIÓN PARA ELIMINAR UNA ASIGNACIÓN EXISTENTE (DESASIGNAR)
+  const handleDesasignarUsuario = async (proyectoId, asignacionId, username) => {
+    if (window.confirm(`¿Estás seguro de que deseas desasignar a ${username} de este proyecto?`)) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/${proyectoId}/asignaciones/${asignacionId}`, {
+          method: 'DELETE',
+          headers: obtenerHeadersAutenticadas()
+        });
+
+        if (response.ok) {
+          cargarDatosDashboard(); 
+        } else {
+          const errTexto = await response.text();
+          alert(`No se pudo desasignar al usuario: ${errTexto}`);
+        }
+      } catch (err) {
+        console.error("❌ Error al conectar con el endpoint de desasignación:", err);
+      }
+    }
+  };
+
   // GUARDAR NUEVO PROYECTO
-const handleGuardarNuevoProyecto = async (e) => {
-  e.preventDefault();
-  try {
-    // Validamos estrictamente si el id es un número válido y no un string vacío o '0'
-    const idUsuarioLimpio = nuevoProyecto.usuarioId && Number(nuevoProyecto.usuarioId) !== 0 
-      ? Number(nuevoProyecto.usuarioId) 
-      : null;
+  const handleGuardarNuevoProyecto = async (e) => {
+    e.preventDefault();
+    try {
+      const idUsuarioLimpio = nuevoProyecto.usuarioId && Number(nuevoProyecto.usuarioId) !== 0 
+        ? Number(nuevoProyecto.usuarioId) 
+        : null;
 
-    const response = await fetch(API_BASE_URL, {
-      method: 'POST',
-      headers: obtenerHeadersAutenticadas(),
-      body: JSON.stringify({
-        nombre: nuevoProyecto.nombre,
-        descripcion: nuevoProyecto.descripcion,
-        fechaInicio: nuevoProyecto.fechaInicio,
-        fechaEntrega: nuevoProyecto.fechaEntrega,
-        prioridad: nuevoProyecto.prioridad,
-        progresoPorcentaje: Number(nuevoProyecto.progresoPorcentaje),
-        usuarioId: idUsuarioLimpio, // Mandamos un entero o null real
-        tasks: [],
-        estadoCalculado: nuevoProyecto.estadoCalculado
-      })
-    });
+      const response = await fetch(API_BASE_URL, {
+        method: 'POST',
+        headers: obtenerHeadersAutenticadas(),
+        body: JSON.stringify({
+          nombre: nuevoProyecto.nombre,
+          descripcion: nuevoProyecto.descripcion,
+          fechaInicio: nuevoProyecto.fechaInicio,
+          fechaEntrega: nuevoProyecto.fechaEntrega,
+          prioridad: nuevoProyecto.prioridad,
+          progresoPorcentaje: Number(nuevoProyecto.progresoPorcentaje),
+          usuarioId: idUsuarioLimpio,
+          tasks: [],
+          estadoCalculado: nuevoProyecto.estadoCalculado
+        })
+      });
 
-    if (response.ok) {
-      setIsCrearModalOpen(false);
-      setNuevoProyecto({ ...estructuraProyectoBase });
-      cargarDatosDashboard();
-    } else {
-      alert('Error en el servidor al intentar crear el proyecto.');
+      if (response.ok) {
+        const proyectoCreado = await response.json();
+        
+        if (idUsuarioLimpio) {
+          await handleAsignarUsuarioAProyecto(proyectoCreado.id, idUsuarioLimpio);
+        }
+
+        setIsCrearModalOpen(false);
+        setNuevoProyecto({ ...estructuraProyectoBase });
+        cargarDatosDashboard();
+      } else {
+        alert('Error en el servidor al intentar crear el proyecto.');
+      }
+    } catch (err) {
+      console.error(err);
     }
-  } catch (err) {
-    console.error(err);
-  }
-};
+  };
+
   // MODIFICAR PROYECTO
-  // MODIFICAR PROYECTO
-const handleGuardarEdicionProyecto = async (e) => {
-  e.preventDefault();
-  try {
-    // Saneamos el usuarioId para evitar que viaje un string vacío o un 0 que tire 500 en Spring
-    const idUsuarioLimpio = proyectoAEditar.usuarioId && Number(proyectoAEditar.usuarioId) !== 0 
-      ? Number(proyectoAEditar.usuarioId) 
-      : null;
+  const handleGuardarEdicionProyecto = async (e) => {
+    e.preventDefault();
+    try {
+      const idUsuarioLimpio = proyectoAEditar.usuarioId && Number(proyectoAEditar.usuarioId) !== 0 
+        ? Number(proyectoAEditar.usuarioId) 
+        : null;
 
-    const bodyPayload = {
-      id: proyectoAEditar.id,
-      nombre: proyectoAEditar.nombre,
-      descripcion: proyectoAEditar.descripcion,
-      fechaInicio: proyectoAEditar.fechaInicio,
-      fechaEntrega: proyectoAEditar.fechaEntrega,
-      prioridad: proyectoAEditar.prioridad || "MEDIA",
-      progresoPorcentaje: Number(proyectoAEditar.progresoPorcentaje),
-      usuarioId: idUsuarioLimpio, // Payload limpio para Hibernate
-      tasks: proyectoAEditar.tasks || [],
-      asignaciones: proyectoAEditar.asignaciones || [],
-      estadoCalculado: proyectoAEditar.estadoCalculado || "A TIEMPO"
-    };
+      const bodyPayload = {
+        id: proyectoAEditar.id,
+        nombre: proyectoAEditar.nombre,
+        descripcion: proyectoAEditar.descripcion,
+        fechaInicio: proyectoAEditar.fechaInicio,
+        fechaEntrega: proyectoAEditar.fechaEntrega,
+        prioridad: proyectoAEditar.prioridad || "MEDIA",
+        progresoPorcentaje: Number(proyectoAEditar.progresoPorcentaje),
+        usuarioId: idUsuarioLimpio,
+        tasks: proyectoAEditar.tasks || [],
+        asignaciones: proyectoAEditar.asignaciones || [],
+        estadoCalculado: proyectoAEditar.estadoCalculado || "A TIEMPO"
+      };
 
-    const response = await fetch(`${API_BASE_URL}/${proyectoAEditar.id}`, {
-      method: 'PUT',
-      headers: obtenerHeadersAutenticadas(),
-      body: JSON.stringify(bodyPayload)
-    });
+      const response = await fetch(`${API_BASE_URL}/${proyectoAEditar.id}`, {
+        method: 'PUT',
+        headers: obtenerHeadersAutenticadas(),
+        body: JSON.stringify(bodyPayload)
+      });
 
-    if (response.ok) {
-      setIsEditarModalOpen(false);
-      setProyectoAEditar(null);
-      cargarDatosDashboard();
-    } else {
-      const errData = await response.json().catch(() => ({}));
-      alert(`Error en el servidor: ${errData.message || 'Verifica la consola de Spring Boot'}`);
+      if (response.ok) {
+        if (idUsuarioLimpio) {
+          await handleAsignarUsuarioAProyecto(proyectoAEditar.id, idUsuarioLimpio);
+        }
+
+        setIsEditarModalOpen(false);
+        setProyectoAEditar(null);
+        cargarDatosDashboard();
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        alert(`Error en el servidor: ${errData.message || 'Verifica la consola de Spring Boot'}`);
+      }
+    } catch (err) {
+      console.error("Error en la petición PUT:", err);
     }
-  } catch (err) {
-    console.error("Error en la petición PUT:", err);
-  }
-};
+  };
 
   const handleCambiarRolAsignacion = async (proyectoId, asignacionId, nuevoRolId) => {
     try {
@@ -196,7 +244,6 @@ const handleGuardarEdicionProyecto = async (e) => {
     setIsEditarModalOpen(true);
   };
 
-  // 🛡️ CORRECCIÓN AQUÍ: Evita que mapeos con asignaciones nulas o indefinidas rompan la app
   const proyectosConNombresDeUsuario = (proyectos || []).map(proy => ({
     ...proy,
     asignaciones: (proy.asignaciones || []).map(asig => {
@@ -273,22 +320,14 @@ const handleGuardarEdicionProyecto = async (e) => {
             onEditar={handleAbrirEditar}
             onEliminar={handleEliminarProyecto}
             onCambiarRol={handleCambiarRolAsignacion} 
+            onDesasignar={handleDesasignarUsuario} 
           />
         ) : (
-          <div className="mt-8 bg-[#0b132b]/30 border border-slate-800 rounded-3xl p-6">
-            <h3 className="text-lg font-bold mb-4">Usuarios en el sistema:</h3>
-            <ul className="space-y-2">
-              {(usuariosGlobales || []).map(u => (
-                <li key={u.id} className="p-3 bg-[#1c2541]/40 border border-slate-800 rounded-xl text-xs font-mono text-sky-400">
-                  ID: {u.id} — Username: <span className="text-white font-bold">{u.username}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <GestionUsuarios />
         )}
       </main>
 
-      {/* 🟦 COMPONENTE TARJETA: CREAR PROYECTO */}
+      {/* CREAR PROYECTO */}
       {isCrearModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-[#0b132b] border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl my-8">
@@ -319,6 +358,7 @@ const handleGuardarEdicionProyecto = async (e) => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Fecha de Inicio</label>
+                  {/* 🛠️ ¡CORREGIDO AQUÍ! Removida la asignación '=' rota por los dos puntos ':' correspondientes */}
                   <input type="date" className="w-full bg-[#1c2541]/50 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none" value={nuevoProyecto.fechaInicio} onChange={(e) => setNuevoProyecto({...nuevoProyecto, fechaInicio: e.target.value})}/>
                 </div>
                 <div>
@@ -352,7 +392,7 @@ const handleGuardarEdicionProyecto = async (e) => {
         </div>
       )}
 
-      {/* 🟨 COMPONENTE TARJETA: MODIFICAR PROYECTO */}
+      {/* MODIFICAR PROYECTO */}
       {isEditarModalOpen && proyectoAEditar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-[#0b132b] border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl my-8">
