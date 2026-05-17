@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import ListaProyectos from '../components/ListaProyectos'; 
 import GestionUsuarios from './GestionUsuarios'; 
+import WorkloadDashboard from '../components/WorkloadDashboard'; // 🔥 Componente Analytics de Kafka
 
 export default function Dashboard() {
   const [proyectos, setProyectos] = useState([]);
   const [usuariosGlobales, setUsuariosGlobales] = useState([]); 
-  const [vistaActual, setVistaActual] = useState('proyectos'); 
+  const [vistaActual, setVistaActual] = useState('proyectos'); // 'proyectos', 'usuarios', o 'analytics'
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -83,7 +84,6 @@ export default function Dashboard() {
     cargarDatosDashboard();
   }, []);
 
-  // FUNCIÓN PARA ASIGNAR EL USUARIO AL PROYECTO MEDIANTE EL ENDPOINT ESPECÍFICO
   const handleAsignarUsuarioAProyecto = async (proyectoId, usuarioId) => {
     if (!usuarioId) return;
     try {
@@ -91,7 +91,6 @@ export default function Dashboard() {
         method: 'POST',
         headers: obtenerHeadersAutenticadas()
       });
-
       if (!response.ok) {
         const errTexto = await response.text();
         console.error("⚠️ Error en endpoint de asignación:", errTexto);
@@ -101,7 +100,6 @@ export default function Dashboard() {
     }
   };
 
-  // NUEVA FUNCIÓN PARA ELIMINAR UNA ASIGNACIÓN EXISTENTE (DESASIGNAR)
   const handleDesasignarUsuario = async (proyectoId, asignacionId, username) => {
     if (window.confirm(`¿Estás seguro de que deseas desasignar a ${username} de este proyecto?`)) {
       try {
@@ -109,7 +107,6 @@ export default function Dashboard() {
           method: 'DELETE',
           headers: obtenerHeadersAutenticadas()
         });
-
         if (response.ok) {
           cargarDatosDashboard(); 
         } else {
@@ -122,7 +119,6 @@ export default function Dashboard() {
     }
   };
 
-  // GUARDAR NUEVO PROYECTO
   const handleGuardarNuevoProyecto = async (e) => {
     e.preventDefault();
     try {
@@ -148,11 +144,9 @@ export default function Dashboard() {
 
       if (response.ok) {
         const proyectoCreado = await response.json();
-        
         if (idUsuarioLimpio) {
           await handleAsignarUsuarioAProyecto(proyectoCreado.id, idUsuarioLimpio);
         }
-
         setIsCrearModalOpen(false);
         setNuevoProyecto({ ...estructuraProyectoBase });
         cargarDatosDashboard();
@@ -164,7 +158,6 @@ export default function Dashboard() {
     }
   };
 
-  // MODIFICAR PROYECTO
   const handleGuardarEdicionProyecto = async (e) => {
     e.preventDefault();
     try {
@@ -196,7 +189,6 @@ export default function Dashboard() {
         if (idUsuarioLimpio) {
           await handleAsignarUsuarioAProyecto(proyectoAEditar.id, idUsuarioLimpio);
         }
-
         setIsEditarModalOpen(false);
         setProyectoAEditar(null);
         cargarDatosDashboard();
@@ -279,6 +271,9 @@ export default function Dashboard() {
             <button onClick={() => setVistaActual('usuarios')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${vistaActual === 'usuarios' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-400 hover:text-slate-200'}`}>
               Usuarios
             </button>
+            <button onClick={() => setVistaActual('analytics')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${vistaActual === 'analytics' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-400 hover:text-slate-200'}`}>
+              Analytics
+            </button>
           </nav>
           <button onClick={() => { localStorage.removeItem('token'); window.location.reload(); }} className="border border-slate-800 bg-slate-900/40 text-slate-400 hover:text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider">
             ← Salir
@@ -291,7 +286,7 @@ export default function Dashboard() {
         <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-6 pb-6 border-b border-slate-900">
           <div>
             <h1 className="text-5xl font-black uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400">
-              {vistaActual === 'proyectos' ? 'Gestión' : 'Personal'}
+              {vistaActual === 'proyectos' ? 'Gestión' : vistaActual === 'usuarios' ? 'Personal' : 'Métricas'}
             </h1>
             <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">
               Control de Licencias / Microservicios / Kafka
@@ -322,12 +317,14 @@ export default function Dashboard() {
             onCambiarRol={handleCambiarRolAsignacion} 
             onDesasignar={handleDesasignarUsuario} 
           />
-        ) : (
+        ) : vistaActual === 'usuarios' ? (
           <GestionUsuarios />
+        ) : (
+          <WorkloadDashboard usuariosGlobales={usuariosGlobales} vistaActual={vistaActual} />
         )}
       </main>
 
-      {/* CREAR PROYECTO */}
+      {/* MODAL CREAR PROYECTO - RESTAURADO COMPLETAMENTE */}
       {isCrearModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-[#0b132b] border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl my-8">
@@ -358,7 +355,6 @@ export default function Dashboard() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Fecha de Inicio</label>
-                  {/* 🛠️ ¡CORREGIDO AQUÍ! Removida la asignación '=' rota por los dos puntos ':' correspondientes */}
                   <input type="date" className="w-full bg-[#1c2541]/50 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none" value={nuevoProyecto.fechaInicio} onChange={(e) => setNuevoProyecto({...nuevoProyecto, fechaInicio: e.target.value})}/>
                 </div>
                 <div>
@@ -392,7 +388,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* MODIFICAR PROYECTO */}
+      {/* MODAL MODIFICAR PROYECTO - RESTAURADO COMPLETAMENTE */}
       {isEditarModalOpen && proyectoAEditar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-[#0b132b] border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl my-8">
