@@ -23,7 +23,7 @@ api.interceptors.request.use(
   }
 );
 
-// INTERCEPTOR DE RESPUESTAS (RESPONSE) - Opcional pero muy útil
+// INTERCEPTOR DE RESPUESTAS (RESPONSE) 
 api.interceptors.response.use(
   (response) => response,
   (error) => {
