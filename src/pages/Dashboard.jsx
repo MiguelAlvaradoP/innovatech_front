@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ListaProyectos from '../components/ListaProyectos';
 import GestionUsuarios from './GestionUsuarios';
-import WorkloadDashboard from '../components/WorkloadDashboard'; // 🔥 Componente Analytics de Kafka
+import WorkloadDashboard from '../components/WorkloadDashboard'; // Componente Analytics de Kafka
 import ProyectoDetalle from '../components/ProyectoDetalle';
 
 export default function Dashboard() {
@@ -10,24 +10,22 @@ export default function Dashboard() {
   const [vistaActual, setVistaActual] = useState('proyectos'); // 'proyectos', 'usuarios', o 'analytics'
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [proyectoSeleccionadoId, setProyectoSeleccionadoId] = useState(null); // 🔥 Estado para la sub-vista de tareas
+  const [proyectoSeleccionadoId, setProyectoSeleccionadoId] = useState(null); //  Estado para la sub-vista de tareas
 
   // Estados para controlar la visibilidad de los Modales
   const [isCrearModalOpen, setIsCrearModalOpen] = useState(false);
   const [isEditarModalOpen, setIsEditarModalOpen] = useState(false);
 
-  // Estructura limpia alineada con tu JSON de Spring Boot
+  // Estructura limpia alineada con tu JSON de Spring Boot (Quitamos progreso manual)
   const estructuraProyectoBase = {
     nombre: '',
     descripcion: '',
     fechaInicio: '',
     fechaEntrega: '',
     prioridad: 'MEDIA',
-    progresoPorcentaje: 0,
     usuarioId: '',
     tasks: [],
-    asignaciones: [],
-    estadoCalculado: 'A TIEMPO'
+    asignaciones: []
   };
 
   const [nuevoProyecto, setNuevoProyecto] = useState({ ...estructuraProyectoBase });
@@ -97,6 +95,12 @@ export default function Dashboard() {
     cargarDatosDashboard();
   }, []);
 
+  //  NUEVA FUNCIÓN INTERCEPTORA: Cierra el sprint board y jala los datos frescos del backend de inmediato
+  const manejarVolverAParrilla = () => {
+    setProyectoSeleccionadoId(null);
+    cargarDatosDashboard(); 
+  };
+
   const handleAsignarUsuarioAProyecto = async (proyectoId, usuarioId) => {
     if (!usuarioId) return;
     try {
@@ -148,10 +152,8 @@ export default function Dashboard() {
           fechaInicio: nuevoProyecto.fechaInicio,
           fechaEntrega: nuevoProyecto.fechaEntrega,
           prioridad: nuevoProyecto.prioridad,
-          progresoPorcentaje: Number(nuevoProyecto.progresoPorcentaje),
           usuarioId: idUsuarioLimpio,
-          tasks: [],
-          estadoCalculado: nuevoProyecto.estadoCalculado
+          tasks: []
         })
       });
 
@@ -185,11 +187,9 @@ export default function Dashboard() {
         fechaInicio: proyectoAEditar.fechaInicio,
         fechaEntrega: proyectoAEditar.fechaEntrega,
         prioridad: proyectoAEditar.prioridad || "MEDIA",
-        progresoPorcentaje: Number(proyectoAEditar.progresoPorcentaje),
         usuarioId: idUsuarioLimpio,
         tasks: proyectoAEditar.tasks || [],
-        asignaciones: proyectoAEditar.asignaciones || [],
-        estadoCalculado: proyectoAEditar.estadoCalculado || "A TIEMPO"
+        asignaciones: proyectoAEditar.asignaciones || []
       };
 
       const response = await fetch(`${API_BASE_URL}/${proyectoAEditar.id}`, {
@@ -288,7 +288,8 @@ export default function Dashboard() {
 
           <div className="flex items-center gap-6">
             <nav className="flex gap-2">
-              <button onClick={() => { setVistaActual('proyectos'); setProyectoSeleccionadoId(null); }} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${vistaActual === 'proyectos' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-400 hover:text-slate-200'}`}>
+              {/* 🔥 INTERCEPCIÓN 1: Al dar clic en 'Proyectos' arriba, gatilla una resincronización total */}
+              <button onClick={() => { setVistaActual('proyectos'); manejarVolverAParrilla(); }} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${vistaActual === 'proyectos' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-400 hover:text-slate-200'}`}>
                 Proyectos
               </button>
               <button onClick={() => { setVistaActual('usuarios'); setProyectoSeleccionadoId(null); }} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${vistaActual === 'usuarios' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-400 hover:text-slate-200'}`}>
@@ -336,12 +337,13 @@ export default function Dashboard() {
               proyectoSeleccionadoId ? (
                   <ProyectoDetalle
                       proyectoId={proyectoSeleccionadoId}
-                      onVolver={() => setProyectoSeleccionadoId(null)}
+                      onVolver={manejarVolverAParrilla} //  INTERCEPCIÓN 2: Cambiado para usar el manejador fresco
                       token={localStorage.getItem('token')}
+                      onProyectoModificado={cargarDatosDashboard}
                   />
               ) : (
                   <div className="space-y-10 mt-8">
-                    {/* 🔥 NUEVA SECCIÓN: TARJETAS DE RESUMEN EJECUTIVO */}
+                    {/* TARJETAS DE RESUMEN EJECUTIVO */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
 
                       {/* Card 1: Total Proyectos */}
@@ -403,7 +405,7 @@ export default function Dashboard() {
           )}
         </main>
 
-        {/* MODAL CREAR PROYECTO - RESTAURADO COMPLETAMENTE */}
+        {/* MODAL CREAR PROYECTO */}
         {isCrearModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
               <div className="bg-[#0b132b] border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl my-8">
@@ -442,20 +444,14 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Asignar Responsable Principal</label>
-                      <select className="w-full bg-[#1c2541] border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none" value={nuevoProyecto.usuarioId} onChange={(e) => setNuevoProyecto({...nuevoProyecto, usuarioId: e.target.value})}>
-                        <option value="">-- Seleccionar Usuario --</option>
-                        {(usuariosGlobales || []).map(u => (
-                            <option key={u.id} value={u.id}>{u.username}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Establecer Porcentaje Avance ({nuevoProyecto.progresoPorcentaje}%)</label>
-                      <input type="range" min="0" max="100" className="w-full accent-indigo-500" value={nuevoProyecto.progresoPorcentaje} onChange={(e) => setNuevoProyecto({...nuevoProyecto, progresoPorcentaje: e.target.value})}/>
-                    </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Asignar Responsable Principal</label>
+                    <select className="w-full bg-[#1c2541] border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none" value={nuevoProyecto.usuarioId} onChange={(e) => setNuevoProyecto({...nuevoProyecto, usuarioId: e.target.value})}>
+                      <option value="">-- Seleccionar Usuario --</option>
+                      {(usuariosGlobales || []).map(u => (
+                          <option key={u.id} value={u.id}>{u.username}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="flex gap-3 pt-4 border-t border-slate-800">
@@ -467,7 +463,7 @@ export default function Dashboard() {
             </div>
         )}
 
-        {/* MODAL MODIFICAR PROYECTO - RESTAURADO COMPLETAMENTE */}
+        {/* MODAL MODIFICAR PROYECTO */}
         {isEditarModalOpen && proyectoAEditar && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
               <div className="bg-[#0b132b] border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl my-8">
@@ -506,24 +502,18 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Modificar Responsable Principal</label>
-                      <select
-                          className="w-full bg-[#1c2541] border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500"
-                          value={proyectoAEditar.usuarioId || ''}
-                          onChange={(e) => setProyectoAEditar({...proyectoAEditar, usuarioId: e.target.value})}
-                      >
-                        <option value="">-- Sin Responsable --</option>
-                        {(usuariosGlobales || []).map(u => (
-                            <option key={u.id} value={u.id}>{u.username}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Modificar Avance ({proyectoAEditar.progresoPorcentaje || 0}%)</label>
-                      <input type="range" min="0" max="100" className="w-full accent-amber-500" value={proyectoAEditar.progresoPorcentaje || 0} onChange={(e) => setProyectoAEditar({...proyectoAEditar, progresoPorcentaje: Number(e.target.value)})}/>
-                    </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Modificar Responsable Principal</label>
+                    <select
+                        className="w-full bg-[#1c2541] border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500"
+                        value={proyectoAEditar.usuarioId || ''}
+                        onChange={(e) => setProyectoAEditar({...proyectoAEditar, usuarioId: e.target.value})}
+                    >
+                      <option value="">-- Sin Responsable --</option>
+                      {(usuariosGlobales || []).map(u => (
+                          <option key={u.id} value={u.id}>{u.username}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="flex gap-3 pt-4 border-t border-slate-800">

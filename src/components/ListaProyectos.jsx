@@ -29,7 +29,7 @@ export default function ListaProyectos({ proyectos, onEditar, onEliminar, onCamb
               <span className="flex items-center gap-1"><Calendar size={12}/> {proy.fechaInicio || 'N/A'}</span>
               <span className="flex items-center gap-1"><Calendar size={12}/> {proy.fechaEntrega || 'N/A'}</span>
             </div>
-            {/* 🔥 BOTÓN AGREGADO: Ver Sprint (Tareas) */}
+            {/*  BOTÓN AGREGADO: Ver Sprint (Tareas) */}
             <button
                 onClick={() => onVerDetalle(proy.id)}
                 className="mt-4 w-full bg-slate-900/50 hover:bg-indigo-600/10 border border-slate-800 hover:border-indigo-500/30 text-slate-300 hover:text-indigo-400 rounded-xl py-2 text-xs font-black uppercase tracking-wider transition-all text-center"

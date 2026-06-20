@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, Plus, Edit3, Trash2, ArrowLeft, Layers } from 'lucide-react';
+import { X, Calendar, Plus, Edit3, Trash2, ArrowLeft, Layers, CheckCircle2 } from 'lucide-react';
 
-export default function ProyectoDetalle({ proyectoId, onVolver, token }) {
+export default function ProyectoDetalle({ proyectoId, onVolver, token, onProyectoModificado }) { 
     const [proyecto, setProyecto] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -74,7 +74,8 @@ export default function ProyectoDetalle({ proyectoId, onVolver, token }) {
             });
             if (res.ok) {
                 setShowModal(false);
-                cargarProyectoExtendido();
+                await cargarProyectoExtendido(); // Primero recarga el estado local
+                if (onProyectoModificado) onProyectoModificado(); // Notifica al Dashboard padre inmediatamente
             } else {
                 alert('Error al procesar la tarea en la base de datos.');
             }
@@ -87,7 +88,10 @@ export default function ProyectoDetalle({ proyectoId, onVolver, token }) {
         if (!window.confirm("¿Remover esta tarea permanentemente del sprint?")) return;
         try {
             const res = await fetch(`${API_PROYECTOS}/tasks/${taskId}`, { method: 'DELETE', headers });
-            if (res.ok) cargarProyectoExtendido();
+            if (res.ok) {
+                await cargarProyectoExtendido(); // Recarga el estado local
+                if (onProyectoModificado) onProyectoModificado(); // Notifica al Dashboard padre inmediatamente
+            }
         } catch (err) {
             console.error(err);
         }
@@ -103,6 +107,16 @@ export default function ProyectoDetalle({ proyectoId, onVolver, token }) {
         'Completada': proyecto?.tasks?.filter(t => t.estado === 'Completada') || []
     };
 
+    // Helper de color según el estado dinámico calculado por Jackson en el Back
+    const getBadgeColor = (estado) => {
+        if (estado === 'COMPLETADO') return 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400';
+        if (estado === 'ATRASADO') return 'bg-rose-500/20 border-rose-500/30 text-rose-400';
+        if (estado?.includes('CRÍTICO')) return 'bg-amber-500/20 border-amber-500/30 text-amber-400';
+        return 'bg-indigo-600/20 border-indigo-500/30 text-indigo-400';
+    };
+
+    const porcentajeActual = proyecto?.progresoPorcentaje || 0;
+
     return (
         <div className="space-y-8 animate-fadeIn">
             {/* Botón Volver y Header del Proyecto */}
@@ -111,13 +125,34 @@ export default function ProyectoDetalle({ proyectoId, onVolver, token }) {
                     <ArrowLeft size={14} /> Volver a la parrilla general
                 </button>
 
-                <div className="bg-[#0b132b]/40 border border-slate-900 rounded-[2.5rem] p-8 backdrop-blur-md relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-8 opacity-5 text-slate-100"><Layers size={140}/></div>
-                    <span className="text-[10px] font-black tracking-widest bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 px-3 py-1 rounded-md uppercase">
-            Sprint Board Activo
-          </span>
-                    <h2 className="text-4xl font-black text-white uppercase tracking-tight mt-3">{proyecto.nombre}</h2>
-                    <p className="text-slate-400 text-sm mt-2 max-w-3xl">{proyecto.descripcion}</p>
+                <div className="bg-[#0b132b]/40 border border-slate-900 rounded-[2.5rem] p-8 backdrop-blur-md relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div className="absolute top-0 right-0 p-8 opacity-5 text-slate-100 pointer-events-none"><Layers size={140}/></div>
+                    
+                    <div className="space-y-3 max-w-2xl">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-black tracking-widest bg-blue-600/20 border border-blue-500/30 text-blue-400 px-3 py-1 rounded-md uppercase">
+                                Sprint Board Activo
+                            </span>
+                            <span className={`text-[10px] font-black tracking-widest border px-3 py-1 rounded-md uppercase ${getBadgeColor(proyecto.estadoCalculado)}`}>
+                                {proyecto.estadoCalculado || 'A TIEMPO'}
+                            </span>
+                        </div>
+                        <h2 className="text-4xl font-black text-white uppercase tracking-tight">{proyecto.nombre}</h2>
+                        <p className="text-slate-400 text-sm max-w-3xl">{proyecto.descripcion}</p>
+                    </div>
+
+                    <div className="w-full md:w-72 bg-slate-950/60 border border-slate-900 rounded-2xl p-5 backdrop-blur-md self-end md:self-center z-10">
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Progreso Global</span>
+                            <span className="text-sm font-mono font-black text-indigo-400">{porcentajeActual}%</span>
+                        </div>
+                        <div className="w-full bg-slate-900 rounded-full h-2.5 overflow-hidden border border-slate-800">
+                            <div 
+                                className="bg-gradient-to-r from-indigo-500 to-blue-500 h-2.5 rounded-full transition-all duration-500 ease-out"
+                                style={{ width: `${porcentajeActual}%` }}
+                            />
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -145,7 +180,6 @@ export default function ProyectoDetalle({ proyectoId, onVolver, token }) {
                             {columnas[colName].map((task) => (
                                 <div key={task.id} className="bg-[#0b132b]/60 border border-slate-900 rounded-2xl p-5 hover:border-slate-800 transition-all group relative">
 
-                                    {/* Acciones de la Tarea */}
                                     <div className="absolute top-4 right-4 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button onClick={() => handleOpenEditar(task)} className="p-1.5 bg-slate-950 text-slate-400 hover:text-amber-400 border border-slate-800 rounded-md transition-colors">
                                             <Edit3 size={12} />
