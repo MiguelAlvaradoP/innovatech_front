@@ -10,20 +10,21 @@ export default function Dashboard() {
   const [vistaActual, setVistaActual] = useState('proyectos'); // 'proyectos', 'usuarios', o 'analytics'
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [proyectoSeleccionadoId, setProyectoSeleccionadoId] = useState(null); //  Estado para la sub-vista de tareas
+  const [usuariosLegacy, setUsuariosLegacy] = useState(false); // Flag para el respaldo
+  const [proyectoSeleccionadoId, setProyectoSeleccionadoId] = useState(null); // Estado para la sub-vista de tareas
 
   // Estados para controlar la visibilidad de los Modales
   const [isCrearModalOpen, setIsCrearModalOpen] = useState(false);
   const [isEditarModalOpen, setIsEditarModalOpen] = useState(false);
 
-  // Estructura limpia alineada con tu JSON de Spring Boot (Quitamos progreso manual)
+  // Estructura limpia alineada con tu Entidad de Spring Boot (usuarioId es SOLO el Líder)
   const estructuraProyectoBase = {
     nombre: '',
     descripcion: '',
     fechaInicio: '',
     fechaEntrega: '',
     prioridad: 'MEDIA',
-    usuarioId: '',
+    usuarioId: '', // Este campo mapea estrictamente al Líder (usuario_id) en el Backend
     tasks: [],
     asignaciones: []
   };
@@ -62,7 +63,7 @@ export default function Dashboard() {
         }
       } catch (parseError) {
         console.error("Contenido conflictivo recibido del servidor:", textoRespuesta);
-        throw new Error('El servidor devolvió una respuesta ilegible. Revisa bucles infinitos en el backend.');
+        throw new Error('El servidor devolvió una respuesta ilegible.');
       }
 
       // 2. Cargar usuarios del ecosistema
@@ -71,9 +72,13 @@ export default function Dashboard() {
         if (resUsuarios.ok) {
           const dataUsuarios = await resUsuarios.json();
           setUsuariosGlobales(dataUsuarios);
+          setUsuariosLegacy(false);
+        } else {
+          throw new Error("Respuesta de usuarios no exitosa.");
         }
       } catch (uErr) {
         console.warn("Usando usuarios de respaldo locales:", uErr);
+        setUsuariosLegacy(true);
         setUsuariosGlobales([
           { id: 14, username: 'sebastian_dev' },
           { id: 15, username: 'granu_admin' },
@@ -95,12 +100,12 @@ export default function Dashboard() {
     cargarDatosDashboard();
   }, []);
 
-  //  NUEVA FUNCIÓN INTERCEPTORA: Cierra el sprint board y jala los datos frescos del backend de inmediato
   const manejarVolverAParrilla = () => {
     setProyectoSeleccionadoId(null);
     cargarDatosDashboard(); 
   };
 
+  // Endpoint para agregar miembros al equipo (sin alterar al Líder)
   const handleAsignarUsuarioAProyecto = async (proyectoId, usuarioId) => {
     if (!usuarioId) return;
     try {
@@ -139,9 +144,14 @@ export default function Dashboard() {
   const handleGuardarNuevoProyecto = async (e) => {
     e.preventDefault();
     try {
-      const idUsuarioLimpio = nuevoProyecto.usuarioId && Number(nuevoProyecto.usuarioId) !== 0
+      const idLiderLimpio = nuevoProyecto.usuarioId && Number(nuevoProyecto.usuarioId) !== 0
           ? Number(nuevoProyecto.usuarioId)
           : null;
+
+      if (idLiderLimpio && !usuariosGlobales.some(u => u.id === idLiderLimpio)) {
+        alert("El Líder seleccionado no es válido en el ecosistema actual.");
+        return;
+      }
 
       const response = await fetch(API_BASE_URL, {
         method: 'POST',
@@ -152,16 +162,12 @@ export default function Dashboard() {
           fechaInicio: nuevoProyecto.fechaInicio,
           fechaEntrega: nuevoProyecto.fechaEntrega,
           prioridad: nuevoProyecto.prioridad,
-          usuarioId: idUsuarioLimpio,
+          usuarioId: idLiderLimpio, // Asignación de columna líder directa
           tasks: []
         })
       });
 
       if (response.ok) {
-        const proyectoCreado = await response.json();
-        if (idUsuarioLimpio) {
-          await handleAsignarUsuarioAProyecto(proyectoCreado.id, idUsuarioLimpio);
-        }
         setIsCrearModalOpen(false);
         setNuevoProyecto({ ...estructuraProyectoBase });
         cargarDatosDashboard();
@@ -176,9 +182,14 @@ export default function Dashboard() {
   const handleGuardarEdicionProyecto = async (e) => {
     e.preventDefault();
     try {
-      const idUsuarioLimpio = proyectoAEditar.usuarioId && Number(proyectoAEditar.usuarioId) !== 0
+      const idLiderLimpio = proyectoAEditar.usuarioId && Number(proyectoAEditar.usuarioId) !== 0
           ? Number(proyectoAEditar.usuarioId)
           : null;
+
+      if (idLiderLimpio && !usuariosGlobales.some(u => u.id === idLiderLimpio)) {
+        alert("El Líder seleccionado ya no se encuentra disponible.");
+        return;
+      }
 
       const bodyPayload = {
         id: proyectoAEditar.id,
@@ -187,7 +198,7 @@ export default function Dashboard() {
         fechaInicio: proyectoAEditar.fechaInicio,
         fechaEntrega: proyectoAEditar.fechaEntrega,
         prioridad: proyectoAEditar.prioridad || "MEDIA",
-        usuarioId: idUsuarioLimpio,
+        usuarioId: idLiderLimpio, // Conserva/Modifica el líder sin dañar asignaciones
         tasks: proyectoAEditar.tasks || [],
         asignaciones: proyectoAEditar.asignaciones || []
       };
@@ -199,15 +210,12 @@ export default function Dashboard() {
       });
 
       if (response.ok) {
-        if (idUsuarioLimpio) {
-          await handleAsignarUsuarioAProyecto(proyectoAEditar.id, idUsuarioLimpio);
-        }
         setIsEditarModalOpen(false);
         setProyectoAEditar(null);
         cargarDatosDashboard();
       } else {
         const errData = await response.json().catch(() => ({}));
-        alert(`Error en el servidor: ${errData.message || 'Verifica la consola de Spring Boot'}`);
+        alert(`Error en el servidor: ${errData.message || 'Verifica la consola'}`);
       }
     } catch (err) {
       console.error("Error en la petición PUT:", err);
@@ -249,30 +257,33 @@ export default function Dashboard() {
     setIsEditarModalOpen(true);
   };
 
-  const proyectosConNombresDeUsuario = (proyectos || []).map(proy => ({
-    ...proy,
-    asignaciones: (proy.asignaciones || []).map(asig => {
-      const usuarioEncontrado = (usuariosGlobales || []).find(u => u.id === asig.usuarioId);
-      return {
-        ...asig,
-        usuarioNombre: usuarioEncontrado ? usuarioEncontrado.username : `User ID: ${asig.usuarioId}`
-      };
-    })
-  }));
+  // Mapeo seguro con nombres de usuarios para el Líder y las Asignaciones
+  const proyectosConNombresDeUsuario = (proyectos || []).map(proy => {
+    const liderEncontrado = (usuariosGlobales || []).find(u => u.id === proy.usuarioId);
+    return {
+      ...proy,
+      liderNombre: liderEncontrado ? liderEncontrado.username : "⚠️ Líder no asignado",
+      asignaciones: (proy.asignaciones || []).map(asig => {
+        const usuarioEncontrado = (usuariosGlobales || []).find(u => u.id === asig.usuarioId);
+        return {
+          ...asig,
+          usuarioNombre: usuarioEncontrado ? usuarioEncontrado.username : "⚠️ Perfil no disponible"
+        };
+      })
+    };
+  });
 
-  // 📊 CÁLCULO DE MÉTRICAS EXECUTIVAS PARA LAS TARJETAS RESUMEN
   const totalProyectos = proyectos.length;
   const proyectosCompletados = proyectos.filter(p => p.progresoPorcentaje === 100).length;
   const proyectosCriticos = proyectos.filter(p => p.prioridad === 'ALTA' || p.prioridad === 'URGENTE').length;
 
-  // Promedio de avance general
   const avancePromedio = totalProyectos > 0
       ? Math.round(proyectos.reduce((acc, p) => acc + (p.progresoPorcentaje || 0), 0) / totalProyectos)
       : 0;
 
   return (
       <div className="min-h-screen bg-[#0a0f1d] text-white font-sans antialiased">
-
+        
         {/* Cabecera / Navbar */}
         <header className="border-b border-slate-900 bg-[#0b132b]/40 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -282,13 +293,12 @@ export default function Dashboard() {
               </svg>
             </div>
             <span className="text-lg font-black tracking-wider text-slate-100 uppercase">
-            Suite <span className="text-indigo-500">HealthTech</span>
-          </span>
+              Suite <span className="text-indigo-500">HealthTech</span>
+            </span>
           </div>
 
           <div className="flex items-center gap-6">
             <nav className="flex gap-2">
-              {/* 🔥 INTERCEPCIÓN 1: Al dar clic en 'Proyectos' arriba, gatilla una resincronización total */}
               <button onClick={() => { setVistaActual('proyectos'); manejarVolverAParrilla(); }} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${vistaActual === 'proyectos' ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20' : 'text-slate-400 hover:text-slate-200'}`}>
                 Proyectos
               </button>
@@ -304,6 +314,12 @@ export default function Dashboard() {
             </button>
           </div>
         </header>
+
+        {usuariosLegacy && !loading && (
+          <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-400 px-6 py-2.5 text-center text-xs font-semibold uppercase tracking-wide">
+            ⚠️ El servicio externo de identidades no responde. Mostrando perfiles de respaldo locales.
+          </div>
+        )}
 
         {/* Contenido de la Aplicación */}
         <main className="max-w-7xl mx-auto px-6 py-12">
@@ -337,49 +353,30 @@ export default function Dashboard() {
               proyectoSeleccionadoId ? (
                   <ProyectoDetalle
                       proyectoId={proyectoSeleccionadoId}
-                      onVolver={manejarVolverAParrilla} //  INTERCEPCIÓN 2: Cambiado para usar el manejador fresco
+                      onVolver={manejarVolverAParrilla}
                       token={localStorage.getItem('token')}
                       onProyectoModificado={cargarDatosDashboard}
                   />
               ) : (
                   <div className="space-y-10 mt-8">
-                    {/* TARJETAS DE RESUMEN EJECUTIVO */}
+                    {/* TARJETAS DE RESUMEN */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-
-                      {/* Card 1: Total Proyectos */}
                       <div className="bg-[#0b132b]/30 border border-slate-900 rounded-2xl p-5 backdrop-blur-sm relative overflow-hidden">
-                        <div className="absolute top-3 right-4 text-slate-700/40 text-xs font-mono font-bold uppercase">TOTAL</div>
                         <p className="text-[10px] font-black tracking-widest text-slate-500 uppercase">Proyectos Activos</p>
                         <p className="text-3xl font-black tracking-tight text-white mt-1">{totalProyectos}</p>
-                        <p className="text-[10px] font-mono text-slate-400 mt-2">Registrados en microservicio</p>
                       </div>
-
-                      {/* Card 2: Avance Promedio */}
                       <div className="bg-[#0b132b]/30 border border-slate-900 rounded-2xl p-5 backdrop-blur-sm relative overflow-hidden">
-                        <div className="absolute top-3 right-4 text-indigo-500/20 text-xs font-mono font-bold uppercase">KPI</div>
                         <p className="text-[10px] font-black tracking-widest text-indigo-400 uppercase">Avance Promedio</p>
                         <p className="text-3xl font-black tracking-tight text-indigo-400 mt-1">{avancePromedio}%</p>
-                        <div className="w-full bg-slate-900 h-1.5 rounded-full mt-3 overflow-hidden border border-slate-800">
-                          <div className="bg-indigo-500 h-full rounded-full transition-all duration-500" style={{ width: `${avancePromedio}%` }} />
-                        </div>
                       </div>
-
-                      {/* Card 3: Completados */}
                       <div className="bg-[#0b132b]/30 border border-slate-900 rounded-2xl p-5 backdrop-blur-sm relative overflow-hidden">
-                        <div className="absolute top-3 right-4 text-emerald-500/20 text-xs font-mono font-bold uppercase">DONE</div>
                         <p className="text-[10px] font-black tracking-widest text-emerald-400 uppercase">Cerrados / Listos</p>
                         <p className="text-3xl font-black tracking-tight text-emerald-400 mt-1">{proyectosCompletados}</p>
-                        <p className="text-[10px] font-mono text-slate-400 mt-2">Con 100% de progreso</p>
                       </div>
-
-                      {/* Card 4: Prioridad Crítica */}
                       <div className="bg-[#0b132b]/30 border border-slate-900 rounded-2xl p-5 backdrop-blur-sm relative overflow-hidden">
-                        <div className="absolute top-3 right-4 text-rose-500/20 text-xs font-mono font-bold uppercase">WARN</div>
-                        <p className="text-[10px] font-black tracking-widest text-rose-400 uppercase">Criticidad Alta / Urgentes</p>
+                        <p className="text-[10px] font-black tracking-widest text-rose-400 uppercase">Criticidad Alta</p>
                         <p className="text-3xl font-black tracking-tight text-rose-400 mt-1">{proyectosCriticos}</p>
-                        <p className="text-[10px] font-mono text-slate-400 mt-2">Requieren despliegue inmediato</p>
                       </div>
-
                     </div>
 
                     {/* Listado General */}
@@ -387,13 +384,19 @@ export default function Dashboard() {
                       <div className="mb-4">
                         <h2 className="text-sm font-black uppercase tracking-wider text-slate-400">Parrilla Operativa de Proyectos</h2>
                       </div>
+                      {/* 🌟 AQUÍ SE INTEGRÓ EL SELECTOR Y LA FUNCIÓN DE ASIGNACIÓN EN TIEMPO REAL */}
                       <ListaProyectos
                           proyectos={proyectosConNombresDeUsuario}
+                          usuariosGlobales={usuariosGlobales}
                           onEditar={handleAbrirEditar}
                           onEliminar={handleEliminarProyecto}
                           onCambiarRol={handleCambiarRolAsignacion}
                           onDesasignar={handleDesasignarUsuario}
                           onVerDetalle={(id) => setProyectoSeleccionadoId(id)}
+                          onAsignarUsuario={async (proyectoId, usuarioId) => {
+                            await handleAsignarUsuarioAProyecto(proyectoId, usuarioId);
+                            cargarDatosDashboard(); 
+                          }}
                       />
                     </div>
                   </div>
@@ -445,9 +448,9 @@ export default function Dashboard() {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Asignar Responsable Principal</label>
-                    <select className="w-full bg-[#1c2541] border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none" value={nuevoProyecto.usuarioId} onChange={(e) => setNuevoProyecto({...nuevoProyecto, usuarioId: e.target.value})}>
-                      <option value="">-- Seleccionar Usuario --</option>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Asignar Responsable Principal (Líder)</label>
+                    <select className="w-full bg-[#1c2541] border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500" value={nuevoProyecto.usuarioId} onChange={(e) => setNuevoProyecto({...nuevoProyecto, usuarioId: e.target.value})}>
+                      <option value="">-- Seleccionar Líder --</option>
                       {(usuariosGlobales || []).map(u => (
                           <option key={u.id} value={u.id}>{u.username}</option>
                       ))}
@@ -503,7 +506,7 @@ export default function Dashboard() {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Modificar Responsable Principal</label>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Modificar Responsable Principal (Líder)</label>
                     <select
                         className="w-full bg-[#1c2541] border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500"
                         value={proyectoAEditar.usuarioId || ''}

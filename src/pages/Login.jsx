@@ -19,8 +19,8 @@ const navigate = useNavigate();
       const response = await api.post('/usuarios/login', credentials);
       const token = response.data.token; 
       
-      // 1. Guardamos en el almacenamiento físico (Ya lo tenías)
-      localStorage.setItem('token', token);
+      // 1. Guardamos en el almacenamiento físico
+      //localStorage.setItem('token', token);
 
       // 2. ¡ESTA ES LA QUE FALTA! 
       // Notificamos al AuthContext para que App.jsx se actualice
